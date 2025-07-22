@@ -1,0 +1,36 @@
+# Medium model configuration (GPT-2 Small scale)
+model:
+  vocab_size: 50000
+  d_model: 768
+  n_heads: 12
+  n_layers: 12
+  d_ff: 3072
+  max_seq_len: 1024
+  dropout: 0.1
+  attention_dropout: 0.1
+  activation: "gelu"
+  pre_norm: true
+  gradient_checkpointing: true
+
+training:
+  batch_size: 8
+  learning_rate: 1e-4
+  weight_decay: 0.01
+  num_epochs: 3
+  lr_scheduler: "cosine"
+  warmup_steps: 2000
+  optimizer: "adamw"
+  gradient_accumulation_steps: 8
+  use_amp: true
+  save_steps: 2000
+  eval_steps: 1000
+  logging_steps: 100
+  max_grad_norm: 1.0
+
+data:
+  dataset_name: "wikitext"
+  dataset_config: "wikitext-103-raw-v1"
+  max_length: 1024
+  vocab_size: 50000
+  pack_sequences: true
+  preprocessing_num_workers: 8

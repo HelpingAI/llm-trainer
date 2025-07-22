@@ -276,7 +276,7 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 
 - 🐛 **Bug Reports**: [GitHub Issues](https://github.com/OEvortex/llm-trainer/issues)
 - 💬 **Discussions**: [GitHub Discussions](https://github.com/OEvortex/llm-trainer/discussions)
-- 📧 **Contact**: [Your Email](mailto:abhay@helpingai.co)
+- 📧 **Contact**: [Vortex](mailto:abhay@helpingai.co)
 
 ---
 

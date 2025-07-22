@@ -1,0 +1,46 @@
+# Custom tokenizer configuration for pretraining LLMs
+# This example shows how to use Mistral tokenizer like in the reference notebook
+device: "auto"
+
+# Tokenizer configuration (new feature)
+tokenizer:
+  type: "custom"  # "custom" for external tokenizers, "bpe" for built-in BPE
+  name_or_path: "mistralai/Mistral-7B-Instruct-v0.2"  # HuggingFace model name or local path
+  # The tokenizer will automatically set pad_token = eos_token if no pad_token exists
+
+model:
+  # vocab_size will be automatically set from tokenizer
+  vocab_size: 32000  # This will be overridden by actual tokenizer vocab size
+  d_model: 2048      # hidden_size from reference notebook
+  n_heads: 32        # num_attention_heads from reference
+  n_layers: 24       # num_hidden_layers from reference  
+  d_ff: 7168         # intermediate_size from reference
+  max_seq_len: 4096  # max_position_embeddings from reference
+  dropout: 0.1
+  attention_dropout: 0.1
+  activation: "silu"  # hidden_act from reference notebook
+  pre_norm: true
+
+training:
+  batch_size: 2                    # per_device_train_batch_size from reference
+  learning_rate: 0.0001           # learning_rate from reference  
+  weight_decay: 0.01
+  num_epochs: 3
+  max_steps: 2000                 # max_steps from reference
+  lr_scheduler: "cosine"
+  warmup_steps: 2                 # warmup_steps from reference
+  optimizer: "adamw"              # optim from reference (paged_adamw_32bit -> adamw)
+  gradient_accumulation_steps: 1  # gradient_accumulation_steps from reference
+  use_amp: true
+  save_steps: 1000               # save_steps from reference
+  eval_steps: 500
+  logging_steps: 1               # logging_steps from reference
+  # DataLoader settings
+  dataloader_num_workers: 4
+  dataloader_pin_memory: true
+
+data:
+  dataset_name: "HuggingFaceTB/cosmopedia-20k"  # Dataset from reference notebook
+  dataset_config: null
+  max_length: 2048                              # max_seq_length from reference
+  pack_sequences: true

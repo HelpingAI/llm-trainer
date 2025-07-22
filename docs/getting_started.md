@@ -1,28 +1,80 @@
-# Getting Started with LLM Trainer
+# 🚀 Getting Started with LLM Trainer
 
-This guide will help you get started with training your own Large Language Models from scratch using the LLM Trainer framework.
+Welcome to LLM Trainer! This comprehensive guide will walk you through everything you need to know to start training your own Large Language Models from scratch.
 
-## Installation
+## 📋 Prerequisites & System Requirements
 
-### Prerequisites
+> [!IMPORTANT]
+> **Minimum Requirements:**
+> - Python 3.8 or higher
+> - PyTorch 2.0 or higher
+> - 8GB RAM (16GB+ recommended)
+> - 10GB free disk space
 
-- Python 3.8 or higher
-- PyTorch 2.0 or higher
-- CUDA (optional, for GPU training)
+> [!NOTE]
+> **Recommended for Training:**
+> - CUDA-compatible GPU with 8GB+ VRAM
+> - 32GB+ system RAM
+> - SSD storage for faster data loading
 
-### Install Dependencies
+### 🖥️ Hardware Recommendations
+
+| Model Size | GPU Memory | System RAM | Training Time* |
+|------------|------------|------------|----------------|
+| Small (25M) | 4GB+ | 8GB+ | 2-4 hours |
+| Medium (117M) | 8GB+ | 16GB+ | 8-12 hours |
+| Large (345M) | 16GB+ | 32GB+ | 24-48 hours |
+
+*Approximate times on modern hardware
+
+## 📦 Installation
+
+### Step 1: Clone the Repository
 
 ```bash
-# Clone the repository
-git clone <repository-url>
+# Clone from GitHub
+git clone https://github.com/OEvortex/llm-trainer.git
 cd llm-trainer
 
-# Install dependencies
+# Verify the installation
+ls -la
+
+### Step 2: Set Up Environment
+
+```bash
+# Create virtual environment (highly recommended)
+python -m venv llm-trainer-env
+source llm-trainer-env/bin/activate  # On Windows: llm-trainer-env\Scripts\activate
+
+# Upgrade pip
+pip install --upgrade pip
+```
+
+### Step 3: Install Dependencies
+
+```bash
+# Install core dependencies
 pip install -r requirements.txt
 
 # Install the package in development mode
 pip install -e .
+
+# Verify installation
+python -c "import llm_trainer; print('✅ Installation successful!')"
 ```
+
+> [!TIP]
+> **Optional Dependencies:**
+> ```bash
+> # For distributed training
+> pip install deepspeed>=0.9.0
+> 
+> # For advanced mixed precision
+> pip install apex
+> 
+> # For development
+> pip install -e ".[dev]"
+> ```
 
 ### Optional Dependencies
 

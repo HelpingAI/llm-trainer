@@ -18,10 +18,11 @@
 - 🏗️ **Custom Transformer Architecture**: Complete implementation from scratch with multi-head attention, feed-forward networks, and positional encoding
 - 🔤 **BPE Tokenizer**: Byte Pair Encoding tokenizer implemented from scratch with Unicode and emoji support
 - 📊 **Data Pipeline**: Efficient data loading from Hugging Face datasets with preprocessing and batching
-- 🚀 **Training Infrastructure**: Distributed training support, gradient accumulation, and checkpointing
+- 💻 **CPU Training Support**: Full CPU training capabilities with optimized configurations - no GPU required!
+-  **Training Infrastructure**: Distributed training support (GPU/CPU), gradient accumulation, and checkpointing
 - 🎯 **Inference Engine**: Text generation with multiple decoding strategies (greedy, beam search, sampling)
 - 📈 **Monitoring**: Integration with TensorBoard and Weights & Biases
-- ⚡ **Performance**: Mixed precision training, gradient checkpointing, and memory optimization
+- ⚡ **Performance**: Mixed precision training (GPU), gradient checkpointing, and memory optimization
 - 🔧 **Flexible Configuration**: YAML/JSON configuration files for easy experimentation
 - 📦 **Production Ready**: Model saving/loading, evaluation metrics, and deployment utilities
 
@@ -32,7 +33,8 @@
 > [!IMPORTANT]
 > - Python 3.8 or higher
 > - PyTorch 2.0 or higher
-> - CUDA-compatible GPU (recommended for training)
+> - **GPU**: CUDA-compatible GPU (recommended for faster training)
+> - **CPU**: Any modern multi-core CPU (accessible alternative)
 > - At least 8GB RAM (16GB+ recommended)
 
 ### 📦 Installation
@@ -110,11 +112,27 @@ trainer.train_from_config(model_config, data_config)
 
 ### 💻 Option 2: Using Command Line
 
+#### GPU Training (Faster)
 ```bash
-# Train a model using configuration file
+# Train a model using GPU configuration
 python scripts/train.py --config configs/small_model.yaml --output_dir ./output
 
-# Generate text interactively
+# Train medium model on GPU
+python scripts/train.py --config configs/medium_model.yaml --output_dir ./output
+```
+
+#### CPU Training (Accessible - No GPU Required!)
+```bash
+# Train small model on CPU (recommended for CPU)
+python scripts/train.py --config configs/cpu_small_model.yaml --output_dir ./output/cpu_small
+
+# Train medium model on CPU (slower but higher quality)
+python scripts/train.py --config configs/cpu_medium_model.yaml --output_dir ./output/cpu_medium
+```
+
+#### Text Generation and Evaluation
+```bash
+# Generate text interactively (works with both CPU and GPU trained models)
 python scripts/generate.py --model_path ./output --prompts "The quick brown fox" --interactive
 
 # Evaluate model performance
@@ -122,7 +140,7 @@ python scripts/evaluate.py --model_path ./output --dataset_config configs/eval_c
 ```
 
 > [!TIP]
-> Use `configs/small_model.yaml` for quick experimentation and `configs/medium_model.yaml` for better quality results.
+> **New to LLM training?** Start with [`configs/cpu_small_model.yaml`](configs/cpu_small_model.yaml:1) for accessible CPU training, then move to [`configs/small_model.yaml`](configs/small_model.yaml:1) when you have GPU access.
 
 ### 🔄 Option 3: Complete Pipeline Example
 
@@ -159,7 +177,8 @@ llm-trainer/
 
 - 📖 [Getting Started Guide](docs/getting_started.md) - Complete setup and first steps
 - 🏗️ [Model Architecture](docs/architecture.md) - Transformer implementation details
-- 🚀 [Training Guide](docs/training.md) - Comprehensive training tutorial
+- 🚀 [Training Guide](docs/training.md) - Comprehensive training tutorial (includes CPU training)
+- 💻 [CPU Training Guide](docs/cpu_training.md) - Dedicated CPU training documentation
 - 🔤 [Tokenizer Details](docs/tokenizer.md) - BPE tokenizer documentation
 - 📋 [API Reference](docs/api.md) - Complete API documentation
 

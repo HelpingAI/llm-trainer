@@ -46,7 +46,7 @@ class Trainer:
         set_seed(config.seed)
         
         # Setup device and distributed training
-        self.device = get_device()
+        self.device = self.config.get_effective_device()
         self.is_distributed = config.world_size > 1
         self.local_rank = config.local_rank
         
@@ -78,7 +78,7 @@ class Trainer:
             self.ema = ExponentialMovingAverage(self.model, decay=ema_decay)
         
         # Setup mixed precision training
-        self.use_amp = config.use_amp
+        self.use_amp = self.config.should_use_amp()
         self.scaler = None
         if self.use_amp:
             self.scaler = torch.cuda.amp.GradScaler()
@@ -124,7 +124,7 @@ class Trainer:
         """Setup distributed training."""
         if not torch.distributed.is_initialized():
             torch.distributed.init_process_group(
-                backend=self.config.distributed_backend,
+                backend=self.config.get_effective_distributed_backend(),
                 rank=self.local_rank,
                 world_size=self.config.world_size
             )
@@ -132,7 +132,7 @@ class Trainer:
         # Wrap model for distributed training
         self.model = torch.nn.parallel.DistributedDataParallel(
             self.model,
-            device_ids=[self.local_rank] if torch.cuda.is_available() else None,
+            device_ids=[self.local_rank] if self.device.type == "cuda" else None,
             find_unused_parameters=False
         )
         
@@ -369,7 +369,7 @@ class Trainer:
 
     def _training_step(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
         """Perform a single training step."""
-        if self.use_amp:
+        if self.use_amp and self.device.type == "cuda":
             with torch.cuda.amp.autocast():
                 outputs = self.model(**batch)
                 loss = outputs["loss"]
@@ -384,14 +384,14 @@ class Trainer:
 
     def _backward_step(self, loss: torch.Tensor) -> None:
         """Perform backward pass."""
-        if self.use_amp:
+        if self.use_amp and self.device.type == "cuda":
             self.scaler.scale(loss).backward()
         else:
             loss.backward()
 
     def _optimizer_step(self) -> None:
         """Perform optimizer step with gradient clipping."""
-        if self.use_amp:
+        if self.use_amp and self.device.type == "cuda":
             # Unscale gradients for clipping
             self.scaler.unscale_(self.optimizer)
 
@@ -427,7 +427,7 @@ class Trainer:
                         for k, v in batch.items()}
 
                 # Forward pass
-                if self.use_amp:
+                if self.use_amp and self.device.type == "cuda":
                     with torch.cuda.amp.autocast():
                         outputs = self.model(**batch)
                         loss = outputs["loss"]

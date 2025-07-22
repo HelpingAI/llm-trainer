@@ -1,4 +1,9 @@
 # Medium model configuration (GPT-2 Small scale)
+# Device options: "auto" (automatic detection), "cpu", "cuda", "mps" (for Apple Silicon)
+# For CPU training, consider using cpu_medium_model.yaml for optimized settings
+# Note: This configuration is GPU-optimized and may be slow on CPU
+device: "auto"
+
 model:
   vocab_size: 50000
   d_model: 768
@@ -14,7 +19,7 @@ model:
 
 training:
   batch_size: 8
-  learning_rate: 1e-4
+  learning_rate: 0.0001
   weight_decay: 0.01
   num_epochs: 3
   lr_scheduler: "cosine"
@@ -26,6 +31,9 @@ training:
   eval_steps: 1000
   logging_steps: 100
   max_grad_norm: 1.0
+  # DataLoader settings
+  dataloader_num_workers: 8
+  dataloader_pin_memory: true
 
 data:
   dataset_name: "wikitext"

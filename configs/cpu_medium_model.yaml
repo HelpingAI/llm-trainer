@@ -1,0 +1,50 @@
+# CPU-optimized medium model configuration
+# This configuration is specifically optimized for CPU training
+# Note: Medium model on CPU will be significantly slower than GPU
+# Consider using cpu_small_model.yaml for faster CPU training
+device: "cpu"
+
+model:
+  vocab_size: 50000
+  d_model: 768
+  n_heads: 12
+  n_layers: 12
+  d_ff: 3072
+  max_seq_len: 1024
+  dropout: 0.1
+  attention_dropout: 0.1
+  activation: "gelu"
+  pre_norm: true
+  # Disable gradient checkpointing on CPU for better performance
+  gradient_checkpointing: false
+
+training:
+  # Very small batch size for CPU memory constraints
+  batch_size: 1
+  # Adjusted learning rate for smaller batch size
+  learning_rate: 0.0002
+  weight_decay: 0.01
+  num_epochs: 3
+  lr_scheduler: "cosine"
+  warmup_steps: 1000
+  optimizer: "adamw"
+  # High gradient accumulation to simulate larger effective batch size
+  gradient_accumulation_steps: 16
+  # Disable AMP for CPU (not supported)
+  use_amp: false
+  save_steps: 1000
+  eval_steps: 500
+  logging_steps: 50
+  max_grad_norm: 1.0
+  # CPU-optimized DataLoader settings
+  dataloader_num_workers: 1  # Minimal workers to avoid overhead
+  dataloader_pin_memory: false  # Disable for CPU
+
+data:
+  dataset_name: "wikitext"
+  dataset_config: "wikitext-103-raw-v1"
+  max_length: 1024
+  vocab_size: 50000
+  pack_sequences: true
+  # Reduced preprocessing workers for CPU
+  preprocessing_num_workers: 2

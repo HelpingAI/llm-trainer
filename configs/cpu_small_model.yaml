@@ -1,0 +1,49 @@
+# CPU-optimized small model configuration
+# This configuration is specifically optimized for CPU training
+# Features: smaller batch sizes, disabled AMP, reduced workers, optimized memory usage
+device: "cpu"
+
+model:
+  vocab_size: 32000
+  d_model: 256
+  n_heads: 4
+  n_layers: 4
+  d_ff: 1024
+  max_seq_len: 512
+  dropout: 0.1
+  attention_dropout: 0.1
+  activation: "gelu"
+  pre_norm: true
+  # Disable gradient checkpointing on CPU for better performance
+  gradient_checkpointing: false
+
+training:
+  # Smaller batch size for CPU memory constraints
+  batch_size: 2
+  # Slightly higher learning rate to compensate for smaller batch size
+  learning_rate: 0.0008
+  weight_decay: 0.01
+  num_epochs: 5
+  lr_scheduler: "cosine"
+  warmup_steps: 200
+  optimizer: "adamw"
+  # Higher gradient accumulation to simulate larger effective batch size
+  gradient_accumulation_steps: 8
+  # Disable AMP for CPU (not supported)
+  use_amp: false
+  save_steps: 500
+  eval_steps: 250
+  logging_steps: 25
+  max_grad_norm: 1.0
+  # CPU-optimized DataLoader settings
+  dataloader_num_workers: 2  # Reduced to avoid overhead
+  dataloader_pin_memory: false  # Disable for CPU
+
+data:
+  dataset_name: "wikitext"
+  dataset_config: "wikitext-2-raw-v1"
+  max_length: 512
+  vocab_size: 32000
+  pack_sequences: true
+  # Reduced preprocessing workers for CPU
+  preprocessing_num_workers: 2

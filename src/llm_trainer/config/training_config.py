@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Optional, List, Dict, Any
 import yaml
 import json
+import torch
 
 
 @dataclass
@@ -67,6 +68,10 @@ class TrainingConfig:
     use_deepspeed: bool = False
     deepspeed_config: Optional[str] = None
     
+    # Device configuration
+    device: str = "auto"  # auto, cpu, cuda, mps
+    force_cpu: bool = False
+    
     # Seed for reproducibility
     seed: int = 42
     
@@ -104,11 +109,76 @@ class TrainingConfig:
         # AMP validation
         valid_amp_dtypes = ["float16", "bfloat16"]
         assert self.amp_dtype in valid_amp_dtypes, f"amp_dtype must be one of {valid_amp_dtypes}"
+        
+        # Device validation
+        valid_devices = ["auto", "cpu", "cuda", "mps"]
+        assert self.device in valid_devices, f"device must be one of {valid_devices}"
+        
+        # Auto-adjust settings for CPU compatibility
+        if self.force_cpu or self.device == "cpu":
+            # Disable AMP for CPU training
+            if self.use_amp:
+                self.use_amp = False
+            # Use gloo backend for CPU distributed training
+            if self.distributed_backend == "nccl":
+                self.distributed_backend = "gloo"
     
     @property
     def effective_batch_size(self) -> int:
         """Calculate effective batch size considering gradient accumulation."""
         return self.batch_size * self.gradient_accumulation_steps * self.world_size
+    
+    def get_effective_device(self) -> torch.device:
+        """Get the effective device based on configuration and hardware availability."""
+        # Force CPU if explicitly requested
+        if self.force_cpu:
+            return torch.device("cpu")
+        
+        # Handle explicit device selection
+        if self.device == "cpu":
+            return torch.device("cpu")
+        elif self.device == "cuda":
+            if torch.cuda.is_available():
+                return torch.device("cuda")
+            else:
+                return torch.device("cpu")
+        elif self.device == "mps":
+            if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                return torch.device("mps")
+            else:
+                return torch.device("cpu")
+        elif self.device == "auto":
+            # Use existing auto-detection logic from utils.py
+            if torch.cuda.is_available():
+                return torch.device("cuda")
+            elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                return torch.device("mps")
+            else:
+                return torch.device("cpu")
+        else:
+            # Fallback to CPU for unknown device types
+            return torch.device("cpu")
+    
+    def should_use_amp(self) -> bool:
+        """Determine if AMP should be used based on device and configuration."""
+        effective_device = self.get_effective_device()
+        
+        # AMP is not supported on CPU
+        if effective_device.type == "cpu":
+            return False
+        
+        # Return the configured AMP setting for GPU/MPS devices
+        return self.use_amp
+    
+    def get_effective_distributed_backend(self) -> str:
+        """Get the effective distributed backend based on device."""
+        effective_device = self.get_effective_device()
+        
+        # Use gloo for CPU, nccl for GPU
+        if effective_device.type == "cpu":
+            return "gloo"
+        else:
+            return self.distributed_backend
     
     def save(self, path: str) -> None:
         """Save configuration to file."""

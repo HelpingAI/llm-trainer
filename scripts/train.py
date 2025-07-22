@@ -150,6 +150,9 @@ def main():
                        help="Path to checkpoint to resume from")
     parser.add_argument("--force_retrain_tokenizer", action="store_true",
                        help="Force retraining of tokenizer")
+    parser.add_argument("--device", type=str, default=None,
+                       choices=["auto", "cpu", "cuda", "mps"],
+                       help="Device to use for training (overrides config file)")
     parser.add_argument("--log_level", type=str, default="info",
                        choices=["debug", "info", "warning", "error"],
                        help="Logging level")
@@ -187,6 +190,24 @@ def main():
     # Override resume checkpoint
     if args.resume_from_checkpoint:
         training_config.resume_from_checkpoint = args.resume_from_checkpoint
+    
+    # Override device if provided via command line
+    if args.device:
+        training_config.device = args.device
+        logging.info(f"Device overridden via command line: {args.device}")
+        
+        # Apply CPU-specific optimizations if device is CPU
+        if args.device == "cpu":
+            logging.info("Applying CPU optimizations...")
+            training_config.use_amp = False
+            training_config.dataloader_pin_memory = False
+            # Reduce workers to avoid overhead on CPU
+            if hasattr(training_config, 'dataloader_num_workers'):
+                training_config.dataloader_num_workers = min(training_config.dataloader_num_workers, 2)
+            # Reduce batch size if it's too large for CPU
+            if training_config.batch_size > 4:
+                logging.info(f"Reducing batch size from {training_config.batch_size} to 4 for CPU training")
+                training_config.batch_size = 4
     
     # Create or load tokenizer
     tokenizer_config = config.get("tokenizer", {})

@@ -12,18 +12,34 @@ Welcome to LLM Trainer! This comprehensive guide will walk you through everythin
 > - 10GB free disk space
 
 > [!NOTE]
-> **Recommended for Training:**
+> **Recommended for GPU Training:**
 > - CUDA-compatible GPU with 8GB+ VRAM
 > - 32GB+ system RAM
 > - SSD storage for faster data loading
 
+> [!TIP]
+> **CPU Training Alternative:**
+> - No GPU required - works on any modern CPU
+> - 8GB+ RAM for small models, 16GB+ for medium models
+> - Longer training times but accessible to everyone
+
 ### 🖥️ Hardware Recommendations
+
+#### GPU Training (Recommended for Production)
 
 | Model Size | GPU Memory | System RAM | Training Time* |
 |------------|------------|------------|----------------|
 | Small (25M) | 4GB+ | 8GB+ | 2-4 hours |
 | Medium (117M) | 8GB+ | 16GB+ | 8-12 hours |
 | Large (345M) | 16GB+ | 32GB+ | 24-48 hours |
+
+#### CPU Training (Accessible Alternative)
+
+| Model Size | CPU Cores | System RAM | Training Time* |
+|------------|-----------|------------|----------------|
+| Small (25M) | 4-8 cores | 8GB+ | 8-24 hours |
+| Medium (117M) | 8+ cores | 16GB+ | 2-7 days |
+| Large (345M) | 16+ cores | 32GB+ | 1-2 weeks |
 
 *Approximate times on modern hardware
 
@@ -96,9 +112,10 @@ pip install deepspeed
 
 ## Quick Start
 
-### 1. Train a Small Model
+### 1. Choose Your Training Approach
 
-The fastest way to get started is to train a small model on a subset of data:
+#### Option A: GPU Training (Faster)
+For users with CUDA-compatible GPUs:
 
 ```python
 from llm_trainer.config import ModelConfig, TrainingConfig, DataConfig
@@ -115,11 +132,13 @@ model_config = ModelConfig(
     max_seq_len=512
 )
 
-# Configure training
+# Configure GPU training
 training_config = TrainingConfig(
+    device="auto",  # Automatically selects GPU if available
     batch_size=16,
     learning_rate=5e-4,
     num_epochs=3,
+    use_amp=True,  # Mixed precision for faster training
     checkpoint_dir="./checkpoints"
 )
 
@@ -146,20 +165,96 @@ trainer = Trainer(model, tokenizer, training_config)
 trainer.train_from_config(model_config, data_config)
 ```
 
+#### Option B: CPU Training (Accessible)
+For users without GPUs or for development/testing:
+
+```python
+from llm_trainer.config import ModelConfig, TrainingConfig, DataConfig
+from llm_trainer.models import TransformerLM
+from llm_trainer.tokenizer import BPETokenizer
+from llm_trainer.training import Trainer
+
+# Configure a CPU-optimized small model
+model_config = ModelConfig(
+    vocab_size=32000,
+    d_model=256,
+    n_heads=4,
+    n_layers=4,
+    max_seq_len=512,
+    gradient_checkpointing=False  # Disabled for CPU
+)
+
+# Configure CPU training
+training_config = TrainingConfig(
+    device="cpu",  # Explicit CPU selection
+    batch_size=2,  # Smaller batch for CPU memory
+    learning_rate=8e-4,  # Slightly higher for smaller batch
+    num_epochs=3,
+    gradient_accumulation_steps=8,  # Effective batch size = 16
+    use_amp=False,  # Not supported on CPU
+    dataloader_num_workers=2,  # Reduced workers
+    dataloader_pin_memory=False,  # Disabled for CPU
+    checkpoint_dir="./checkpoints"
+)
+
+# Configure data
+data_config = DataConfig(
+    dataset_name="wikitext",
+    dataset_config="wikitext-2-raw-v1",
+    max_length=512,
+    preprocessing_num_workers=2  # Reduced for CPU
+)
+
+# Create and train tokenizer
+tokenizer = BPETokenizer()
+tokenizer.train_from_dataset(
+    dataset_name="wikitext",
+    dataset_config="wikitext-2-raw-v1",
+    vocab_size=32000
+)
+
+# Create model
+model = TransformerLM(model_config)
+
+# Create trainer and train
+trainer = Trainer(model, tokenizer, training_config)
+trainer.train_from_config(model_config, data_config)
+```
+
+> [!TIP]
+> **Quick CPU Training**: Use the pre-configured [`configs/cpu_small_model.yaml`](configs/cpu_small_model.yaml:1) for optimal CPU training settings.
+
 ### 2. Using Command Line Scripts
 
-You can also use the provided command-line scripts:
-
+#### GPU Training (Default)
 ```bash
-# Train a model
-python scripts/train.py --config examples/training_config.json --output_dir ./output
+# Train a model with GPU (if available)
+python scripts/train.py --config configs/small_model.yaml --output_dir ./output
 
-# Generate text
+# Train medium model with GPU
+python scripts/train.py --config configs/medium_model.yaml --output_dir ./output
+```
+
+#### CPU Training (Accessible)
+```bash
+# Train small model on CPU (recommended)
+python scripts/train.py --config configs/cpu_small_model.yaml --output_dir ./output/cpu_small
+
+# Train medium model on CPU (slower but higher quality)
+python scripts/train.py --config configs/cpu_medium_model.yaml --output_dir ./output/cpu_medium
+```
+
+#### Text Generation and Evaluation
+```bash
+# Generate text (works with both CPU and GPU trained models)
 python scripts/generate.py --model_path ./output --prompts "The quick brown fox" --interactive
 
-# Evaluate model
+# Evaluate model performance
 python scripts/evaluate.py --model_path ./output --eval_config examples/evaluation_config.json
 ```
+
+> [!NOTE]
+> **CPU vs GPU Training**: CPU configurations use smaller batch sizes, disabled AMP, and optimized worker settings for better CPU performance.
 
 ### 3. Text Generation
 
@@ -227,6 +322,47 @@ llm-trainer/
 └── docs/                     # Documentation
 ```
 
+### How to Choose Between CPU and GPU Training
+
+#### Use CPU Training When:
+- **No GPU Available**: Your system doesn't have a CUDA-compatible GPU
+- **Development/Testing**: Quick experimentation and code validation
+- **Small Models**: Training models with <50M parameters
+- **Learning**: Understanding the training process without GPU costs
+- **Resource Constraints**: Limited access to GPU resources
+
+#### Use GPU Training When:
+- **Production Models**: Training models for deployment
+- **Large Models**: Models with >100M parameters
+- **Time Constraints**: Need faster training iterations
+- **Batch Experiments**: Running multiple training experiments
+- **Fine-tuning**: Adapting pre-trained models
+
+#### Migration Guide: GPU to CPU Training
+
+If you have existing GPU training configurations, here's how to adapt them for CPU:
+
+```python
+# Original GPU config
+gpu_config = TrainingConfig(
+    device="cuda",
+    batch_size=32,
+    use_amp=True,
+    dataloader_pin_memory=True,
+    dataloader_num_workers=8
+)
+
+# CPU-adapted config
+cpu_config = TrainingConfig(
+    device="cpu",
+    batch_size=2,  # Reduce batch size
+    gradient_accumulation_steps=16,  # Maintain effective batch size
+    use_amp=False,  # Disable AMP
+    dataloader_pin_memory=False,  # Disable pin memory
+    dataloader_num_workers=2  # Reduce workers
+)
+```
+
 ## Key Features
 
 ### 🏗️ Custom Transformer Architecture
@@ -249,8 +385,9 @@ llm-trainer/
 - Streaming support for large datasets
 
 ### 🚀 Training Infrastructure
-- Distributed training support
-- Mixed precision training
+- **CPU and GPU Support**: Flexible device selection with optimized configurations
+- Distributed training support (NCCL for GPU, Gloo for CPU)
+- Mixed precision training (GPU only)
 - Gradient accumulation
 - Learning rate scheduling
 - Checkpointing and resuming
@@ -269,6 +406,7 @@ llm-trainer/
 ## Next Steps
 
 - [Training Guide](training.md) - Detailed training instructions
+- [CPU Training Guide](cpu_training.md) - Comprehensive CPU training documentation
 - [Model Architecture](architecture.md) - Understanding the Transformer implementation
 - [Configuration Reference](configuration.md) - All configuration options
 - [API Reference](api.md) - Complete API documentation

@@ -299,6 +299,254 @@ trainer.save_model(os.path.join(output_dir, "final_model"))
 print(f"Training completed! Model saved to {output_dir}")
 ```
 
+## CPU Training
+
+LLM Trainer provides comprehensive support for CPU training, making it accessible for users without GPU resources or for development and testing purposes.
+
+### Device Selection Options
+
+LLM Trainer offers flexible device selection through the [`TrainingConfig`](src/llm_trainer/config/training_config.py:1):
+
+```python
+from llm_trainer.config import TrainingConfig
+
+# Explicit CPU selection
+training_config = TrainingConfig(device="cpu")
+
+# Automatic device selection (falls back to CPU if no GPU)
+training_config = TrainingConfig(device="auto")
+
+# Force CPU even if GPU is available
+training_config = TrainingConfig(device="cuda", force_cpu=True)
+```
+
+### CPU-Optimized Configuration Files
+
+Use the pre-configured CPU training configurations for optimal performance:
+
+#### Small Model (Recommended for CPU)
+```bash
+# Train using CPU small model configuration
+python scripts/train.py --config configs/cpu_small_model.yaml --output_dir ./output/cpu_small
+```
+
+**Key features of [`configs/cpu_small_model.yaml`](configs/cpu_small_model.yaml:1):**
+- **Small batch size (2)**: Optimized for CPU memory constraints
+- **Gradient accumulation (8 steps)**: Achieves effective batch size of 16
+- **Disabled AMP**: CPU doesn't support automatic mixed precision
+- **Reduced workers**: Minimizes overhead on CPU
+- **Compact model**: 4 layers, 256 d_model for faster training
+
+#### Medium Model (Advanced CPU Users)
+```bash
+# Train using CPU medium model configuration
+python scripts/train.py --config configs/cpu_medium_model.yaml --output_dir ./output/cpu_medium
+```
+
+**Key features of [`configs/cpu_medium_model.yaml`](configs/cpu_medium_model.yaml:1):**
+- **Very small batch size (1)**: Maximum memory efficiency
+- **High gradient accumulation (16 steps)**: Maintains training stability
+- **Larger model**: 12 layers, 768 d_model for better quality
+
+### Performance Considerations and Optimization
+
+> [!WARNING]
+> **CPU Training Performance**: CPU training is significantly slower than GPU training. Expect 10-50x longer training times depending on your hardware.
+
+#### Training Time Estimates (CPU)
+
+| Model Size | CPU Cores | RAM | Estimated Time |
+|------------|-----------|-----|----------------|
+| Small (25M) | 4-8 cores | 8GB+ | 8-24 hours |
+| Medium (117M) | 8+ cores | 16GB+ | 2-7 days |
+| Large (345M) | 16+ cores | 32GB+ | 1-2 weeks |
+
+#### CPU Optimization Tips
+
+1. **Batch Size Optimization**:
+```python
+# Start with small batch sizes and increase gradually
+training_config = TrainingConfig(
+    batch_size=1,  # Start small
+    gradient_accumulation_steps=16,  # Simulate larger batch
+)
+```
+
+2. **Memory Management**:
+```python
+# Disable memory-intensive features for CPU
+training_config = TrainingConfig(
+    use_amp=False,  # Not supported on CPU
+    gradient_checkpointing=False,  # Less beneficial on CPU
+    dataloader_pin_memory=False,  # CPU doesn't benefit from pinned memory
+)
+```
+
+3. **Worker Configuration**:
+```python
+# Reduce workers to avoid overhead
+training_config = TrainingConfig(
+    dataloader_num_workers=2,  # Fewer workers for CPU
+)
+
+data_config = DataConfig(
+    preprocessing_num_workers=2,  # Minimize preprocessing overhead
+)
+```
+
+4. **Model Architecture Adjustments**:
+```python
+# Use smaller models for faster CPU training
+model_config = ModelConfig(
+    d_model=256,     # Smaller than typical 768
+    n_layers=4,      # Fewer layers
+    n_heads=4,       # Fewer attention heads
+    max_seq_len=512, # Shorter sequences
+)
+```
+
+### CPU vs GPU Training Comparison
+
+| Feature | CPU Training | GPU Training |
+|---------|-------------|-------------|
+| **Speed** | 10-50x slower | Baseline |
+| **Memory** | System RAM (8-64GB) | VRAM (4-80GB) |
+| **Cost** | Lower hardware cost | Higher GPU cost |
+| **Accessibility** | Available everywhere | Requires CUDA GPU |
+| **Mixed Precision** | Not supported | Supported (FP16/BF16) |
+| **Distributed Training** | Gloo backend | NCCL backend |
+| **Best Use Cases** | Development, testing, small models | Production, large models |
+
+### CPU Training Examples
+
+#### Quick CPU Training Example
+```python
+from llm_trainer.config import ModelConfig, TrainingConfig, DataConfig
+from llm_trainer.models import TransformerLM
+from llm_trainer.tokenizer import BPETokenizer
+from llm_trainer.training import Trainer
+
+# CPU-optimized configuration
+model_config = ModelConfig(
+    vocab_size=32000,
+    d_model=256,
+    n_heads=4,
+    n_layers=4,
+    max_seq_len=512
+)
+
+training_config = TrainingConfig(
+    device="cpu",
+    batch_size=2,
+    learning_rate=8e-4,
+    num_epochs=3,
+    gradient_accumulation_steps=8,
+    use_amp=False,
+    dataloader_num_workers=2,
+    dataloader_pin_memory=False
+)
+
+data_config = DataConfig(
+    dataset_name="wikitext",
+    dataset_config="wikitext-2-raw-v1",
+    max_length=512,
+    preprocessing_num_workers=2
+)
+
+# Train model on CPU
+tokenizer = BPETokenizer()
+tokenizer.train_from_dataset(
+    dataset_name="wikitext",
+    dataset_config="wikitext-2-raw-v1",
+    vocab_size=32000
+)
+
+model = TransformerLM(model_config)
+trainer = Trainer(model, tokenizer, training_config)
+trainer.train_from_config(model_config, data_config)
+```
+
+### Distributed CPU Training
+
+CPU training supports distributed training using the gloo backend:
+
+```bash
+# Multi-process CPU training
+torchrun --nproc_per_node=4 scripts/train.py \
+    --config configs/cpu_small_model.yaml \
+    --output_dir ./output/cpu_distributed
+```
+
+```python
+# Distributed CPU configuration
+training_config = TrainingConfig(
+    device="cpu",
+    distributed_backend="gloo",  # Automatically set for CPU
+    world_size=4,
+    batch_size=1,  # Per-process batch size
+    gradient_accumulation_steps=4
+)
+```
+
+### Troubleshooting CPU Training Issues
+
+#### Common CPU Training Problems
+
+| Issue | Symptoms | Solution |
+|-------|----------|----------|
+| **Slow Training** | Very long epoch times | Use smaller model, reduce batch size |
+| **High Memory Usage** | System freezing, OOM | Reduce batch size, disable pin_memory |
+| **Poor Convergence** | Loss not decreasing | Increase learning rate, check data quality |
+| **Process Hanging** | Training stops responding | Reduce num_workers, check data loading |
+
+#### CPU-Specific Error Solutions
+
+**"RuntimeError: Attempting to use AMP on CPU"**
+```python
+# Solution: Disable AMP for CPU training
+training_config.use_amp = False
+```
+
+**"NCCL backend not available on CPU"**
+```python
+# Solution: Use gloo backend for CPU distributed training
+training_config.distributed_backend = "gloo"
+```
+
+**"DataLoader worker processes hanging"**
+```python
+# Solution: Reduce or disable multiprocessing
+training_config.dataloader_num_workers = 0  # Single-threaded
+data_config.preprocessing_num_workers = 1
+```
+
+### CPU Hardware Recommendations
+
+#### Minimum Requirements
+- **CPU**: 4+ cores (Intel i5/AMD Ryzen 5 or better)
+- **RAM**: 8GB+ (16GB recommended)
+- **Storage**: SSD recommended for faster data loading
+
+#### Optimal CPU Training Setup
+- **CPU**: 8+ cores with high single-thread performance
+- **RAM**: 32GB+ for medium/large models
+- **Storage**: NVMe SSD for dataset caching
+- **Cooling**: Adequate cooling for sustained training
+
+#### CPU Selection Guidelines
+```python
+# Check your system capabilities
+import psutil
+import torch
+
+print(f"CPU cores: {psutil.cpu_count()}")
+print(f"Available RAM: {psutil.virtual_memory().total / (1024**3):.1f} GB")
+print(f"PyTorch threads: {torch.get_num_threads()}")
+
+# Optimize thread usage for your CPU
+torch.set_num_threads(psutil.cpu_count())  # Use all cores
+```
+
 ## Advanced Training Techniques
 
 ### Distributed Training
@@ -588,6 +836,7 @@ After successful training:
 5. **Monitor**: Track model performance in production
 
 For more advanced topics, see:
+- [CPU Training Guide](cpu_training.md) - Comprehensive CPU training documentation
 - [Model Architecture](architecture.md) - Deep dive into the Transformer implementation
 - [API Reference](api.md) - Complete API documentation
 - [Tokenizer Details](tokenizer.md) - BPE tokenizer specifics

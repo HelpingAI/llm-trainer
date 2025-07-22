@@ -15,11 +15,15 @@ def set_seed(seed: int) -> None:
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
+    
+    # Only set CUDA seed if CUDA is available
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
     
     # For deterministic behavior (may impact performance)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
+    if torch.cuda.is_available():
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
 
 
 def get_device() -> torch.device:
@@ -207,18 +211,41 @@ def get_memory_usage() -> Dict[str, float]:
     """Get current memory usage."""
     memory_info = {}
     
-    if torch.cuda.is_available():
-        memory_info["cuda_allocated"] = torch.cuda.memory_allocated() / 1024**3  # GB
-        memory_info["cuda_reserved"] = torch.cuda.memory_reserved() / 1024**3  # GB
-        memory_info["cuda_max_allocated"] = torch.cuda.max_memory_allocated() / 1024**3  # GB
+    # CUDA memory tracking (only if CUDA is available and being used)
+    if torch.cuda.is_available() and torch.cuda.device_count() > 0:
+        try:
+            memory_info["cuda_allocated"] = torch.cuda.memory_allocated() / 1024**3  # GB
+            memory_info["cuda_reserved"] = torch.cuda.memory_reserved() / 1024**3  # GB
+            memory_info["cuda_max_allocated"] = torch.cuda.max_memory_allocated() / 1024**3  # GB
+        except RuntimeError:
+            # Handle case where CUDA context is not initialized
+            pass
     
-    # System memory (requires psutil)
+    # System memory (always try to get this as fallback)
     try:
         import psutil
         process = psutil.Process()
         memory_info["system_memory"] = process.memory_info().rss / 1024**3  # GB
+        # Add system-wide memory info for CPU training
+        virtual_memory = psutil.virtual_memory()
+        memory_info["system_memory_total"] = virtual_memory.total / 1024**3  # GB
+        memory_info["system_memory_available"] = virtual_memory.available / 1024**3  # GB
+        memory_info["system_memory_percent"] = virtual_memory.percent
     except ImportError:
-        pass
+        # Fallback to basic memory tracking without psutil
+        import resource
+        try:
+            # Get memory usage in KB and convert to GB
+            memory_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            # On Linux, ru_maxrss is in KB; on macOS, it's in bytes
+            import sys
+            if sys.platform == 'darwin':  # macOS
+                memory_info["system_memory"] = memory_kb / 1024**3  # Convert from bytes to GB
+            else:  # Linux and others
+                memory_info["system_memory"] = memory_kb / 1024**2  # Convert from KB to GB
+        except:
+            # Ultimate fallback - just indicate we couldn't get memory info
+            memory_info["system_memory"] = 0.0
     
     return memory_info
 

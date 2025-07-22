@@ -1,4 +1,8 @@
 # Small model configuration for quick experimentation
+# Device options: "auto" (automatic detection), "cpu", "cuda", "mps" (for Apple Silicon)
+# For CPU training, consider using cpu_small_model.yaml for optimized settings
+device: "auto"
+
 model:
   vocab_size: 32000
   d_model: 256
@@ -13,7 +17,7 @@ model:
 
 training:
   batch_size: 16
-  learning_rate: 5e-4
+  learning_rate: 0.0005
   weight_decay: 0.01
   num_epochs: 5
   lr_scheduler: "cosine"
@@ -24,6 +28,9 @@ training:
   save_steps: 1000
   eval_steps: 500
   logging_steps: 50
+  # DataLoader settings (adjust for CPU if needed)
+  dataloader_num_workers: 4
+  dataloader_pin_memory: true
 
 data:
   dataset_name: "wikitext"

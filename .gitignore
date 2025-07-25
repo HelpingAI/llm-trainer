@@ -154,7 +154,7 @@ wandb/
 mlruns/
 
 # Data files
-data/
+# data/
 datasets/
 *.csv
 *.tsv

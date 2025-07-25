@@ -5,6 +5,99 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2025-7-25 - HuggingFace Tokenizer Integration
+
+This release introduces seamless integration with HuggingFace's pretrained tokenizers, enabling users to leverage existing vocabularies from popular models like Mistral, Llama, GPT-2, and more. This integration provides maximum compatibility and flexibility for fine-tuning and continued training scenarios.
+
+### 🆕 Added
+
+#### **HuggingFace Tokenizer Wrapper**
+- **[`src/llm_trainer/tokenizer/hf_tokenizer.py`](src/llm_trainer/tokenizer/hf_tokenizer.py)**: Complete wrapper implementation for HuggingFace AutoTokenizer integration
+- **AutoTokenizer Integration**: Direct integration with HuggingFace's `AutoTokenizer.from_pretrained()` for loading any pretrained tokenizer
+- **Flexible Configuration**: Support for `local_files_only` parameter and additional kwargs for customized tokenizer loading
+- **Attribute Forwarding**: Transparent attribute forwarding to underlying tokenizer via `__getattr__` method
+
+#### **Comprehensive Documentation**
+- **[`docs/hf_tokenizer.md`](docs/hf_tokenizer.md)**: Extensive 220+ line documentation covering all aspects of HuggingFace tokenizer usage
+- **Multiple Training Examples**: Complete examples for both HuggingFace SFTTrainer and LLM Trainer's own training pipeline
+- **Advanced Usage Patterns**: Batch encoding/decoding, offset mapping, custom special tokens, and troubleshooting guides
+- **Best Practices**: Comprehensive tips for tokenizer configuration, padding tokens, and model compatibility
+
+#### **Training Pipeline Integration**
+- **SFTTrainer Compatibility**: Full example integration with HuggingFace's SFTTrainer for supervised fine-tuning
+- **Native Trainer Support**: Complete integration examples with LLM Trainer's own Trainer class and LanguageModelingDataset
+- **Model Configuration**: Detailed examples of configuring models with HuggingFace tokenizer vocabulary sizes and special tokens
+- **Dataset Integration**: Examples using popular datasets like 'HuggingFaceTB/cosmopedia-20k' with proper formatting functions
+
+#### **Advanced Tokenizer Features**
+- **Batch Processing**: Support for batch encoding with padding, truncation, and tensor return options
+- **Special Token Management**: Comprehensive handling of pad_token, bos_token, eos_token, and custom special tokens
+- **Offset Mapping**: Support for token-to-character offset mapping for NER and QA tasks
+- **Token Addition**: Examples for adding custom special tokens and resizing model embeddings
+
+### 🚀 Integration Benefits
+
+#### **Pretrained Model Compatibility**
+- **Vocabulary Reuse**: Leverage vocabularies from popular open-source models without retraining
+- **Fine-tuning Support**: Seamless fine-tuning with the same tokenization as base models
+- **Time Savings**: Eliminate need for tokenizer training in transfer learning scenarios
+- **Experimentation**: Easy switching between different tokenization strategies
+
+#### **API Consistency**
+- **Unified Interface**: Consistent API with existing tokenizer implementations
+- **Method Compatibility**: Standard `encode()` and `decode()` methods with kwargs support
+- **Transparent Usage**: Direct access to underlying tokenizer attributes and methods
+- **Drop-in Replacement**: Can be used alongside existing BPE and WordPiece tokenizers
+
+### 🔧 Usage Examples
+
+#### **Quick Start**
+```python
+from llm_trainer.tokenizer import HFTokenizerWrapper
+
+# Load Mistral tokenizer
+hf_tokenizer = HFTokenizerWrapper("mistralai/Mistral-7B-Instruct-v0.2")
+hf_tokenizer.tokenizer.pad_token = hf_tokenizer.tokenizer.eos_token
+```
+
+#### **Training Integration**
+```python
+# With HuggingFace SFTTrainer
+trainer = SFTTrainer(
+    model=model,
+    tokenizer=hf_tokenizer.tokenizer,
+    train_dataset=dataset,
+    max_seq_length=2048
+)
+
+# With LLM Trainer
+trainer = Trainer(
+    model=model,
+    tokenizer=hf_tokenizer.tokenizer,
+    train_dataset=train_dataset
+)
+```
+
+#### **Advanced Features**
+```python
+# Batch processing
+batch = hf_tokenizer.tokenizer(texts, padding=True, truncation=True, return_tensors="pt")
+
+# Custom special tokens
+hf_tokenizer.tokenizer.add_special_tokens({"additional_special_tokens": ["<custom>"]})
+model.resize_token_embeddings(len(hf_tokenizer.tokenizer))
+```
+
+### 📚 Documentation Coverage
+
+- **Integration Examples**: Complete examples for both training frameworks
+- **Model Configuration**: Detailed model setup with tokenizer vocabulary integration
+- **Troubleshooting**: Common issues and solutions for tokenizer mismatches and embedding size problems
+- **Best Practices**: Guidelines for padding tokens, special token management, and model compatibility
+- **Reference Links**: Comprehensive references to HuggingFace documentation and tutorials
+
+---
+
 ## [0.1.2] - 2025-7-25 - WordPiece Tokenizer Implementation
 
 This release introduces a comprehensive WordPiece tokenizer implementation following BERT-style approach, providing an alternative to the existing BPE tokenizer with likelihood-based subword merging and enhanced Unicode support.

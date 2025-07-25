@@ -10,7 +10,7 @@ This package provides:
 - Inference and generation capabilities
 """
 
-__version__ = "0.1.2"
+__version__ = "0.2.1"
 __author__ = "OEvortex"
 
 from .models import TransformerLM

@@ -110,6 +110,38 @@ trainer = Trainer(model, tokenizer, training_config)
 trainer.train_from_config(model_config, data_config)
 ```
 
+### 🚀 Using a HuggingFace Pretrained Tokenizer
+
+You can use a pretrained tokenizer from HuggingFace (e.g., Mistral, Llama, etc.) in your training pipeline via `HFTokenizerWrapper`:
+
+```python
+from llm_trainer.tokenizer import HFTokenizerWrapper
+from transformers import MistralConfig, MistralForCausalLM
+
+# Load a pretrained tokenizer from HuggingFace
+hf_tokenizer = HFTokenizerWrapper("mistralai/Mistral-7B-Instruct-v0.2")
+hf_tokenizer.tokenizer.pad_token = hf_tokenizer.tokenizer.eos_token  # Set padding token if needed
+
+# Configure your model (example: Mistral)
+model_config = MistralConfig(
+    vocab_size=hf_tokenizer.tokenizer.vocab_size,
+    hidden_size=2048,
+    intermediate_size=7168,
+    num_hidden_layers=24,
+    num_attention_heads=32,
+    num_key_value_heads=8,
+    hidden_act="silu",
+    max_position_embeddings=4096,
+    pad_token_id=hf_tokenizer.tokenizer.pad_token_id,
+    bos_token_id=hf_tokenizer.tokenizer.bos_token_id,
+    eos_token_id=hf_tokenizer.tokenizer.eos_token_id
+)
+model = MistralForCausalLM(model_config)
+
+# Use hf_tokenizer in your Trainer or data pipeline as you would with any tokenizer
+```
+
+
 ### 💻 Option 2: Using Command Line
 
 #### GPU Training (Faster)

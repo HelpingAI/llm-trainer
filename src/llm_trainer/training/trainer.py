@@ -31,12 +31,23 @@ class Trainer:
                  config: TrainingConfig,
                  train_dataset: Optional[LanguageModelingDataset] = None,
                  eval_dataset: Optional[LanguageModelingDataset] = None,
-                 data_config: Optional[DataConfig] = None):
-        
+                 data_config: Optional[DataConfig] = None,
+                 formatting_func: Optional[Any] = None):
+        """
+        Args:
+            model: The model to train.
+            tokenizer: The tokenizer to use.
+            config: Training configuration.
+            train_dataset: Optional training dataset.
+            eval_dataset: Optional evaluation dataset.
+            data_config: Optional data configuration.
+            formatting_func: Optional formatting function for dataset samples (like SFTTrainer).
+        """
         self.model = model
         self.tokenizer = tokenizer
         self.config = config
         self.data_config = data_config
+        self.formatting_func = formatting_func
         
         # Setup logging
         setup_logging(config.log_level)

@@ -9,8 +9,8 @@ This package provides:
 - Inference and generation capabilities
 """
 
-__version__ = "0.1.0"
-__author__ = "Vortex"
+__version__ = "0.1.2"
+__author__ = "OEvortex"
 
 from .models import TransformerLM
 from .tokenizer import BPETokenizer

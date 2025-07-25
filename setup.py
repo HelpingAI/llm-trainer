@@ -1,4 +1,10 @@
 from setuptools import setup, find_packages
+import os
+import sys
+
+# Add src directory to path to import version and author
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+from llm_trainer import __version__, __author__
 
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
@@ -8,8 +14,8 @@ with open("requirements.txt", "r", encoding="utf-8") as fh:
 
 setup(
     name="llm-trainer",
-    version="0.1.1",
-    author="OEvortex",
+    version=__version__,
+    author=__author__,
     description="A complete framework for training Large Language Models from scratch",
     long_description=long_description,
     long_description_content_type="text/markdown",

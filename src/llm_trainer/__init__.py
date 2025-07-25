@@ -4,6 +4,7 @@ LLM Trainer: A complete framework for training Large Language Models from scratc
 This package provides:
 - Custom Transformer architecture implementation
 - BPE tokenizer from scratch
+- wordpiece tokenizer
 - Data loading and preprocessing pipelines
 - Training infrastructure with distributed support
 - Inference and generation capabilities

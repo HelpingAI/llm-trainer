@@ -9,8 +9,37 @@ from llm_trainer import __version__, __author__
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
-with open("requirements.txt", "r", encoding="utf-8") as fh:
-    requirements = [line.strip() for line in fh if line.strip() and not line.startswith("#")]
+# Core requirements
+requirements = [
+    # Core ML libraries
+    "torch>=2.0.0",
+    "torchvision>=0.15.0",
+    "torchaudio>=2.0.0",
+    
+    # Hugging Face ecosystem
+    "transformers>=4.30.0",
+    "datasets>=2.12.0",
+    "tokenizers>=0.13.0",
+    "accelerate>=0.20.0",
+    
+    # Data processing
+    "numpy>=1.24.0",
+    "pandas>=2.0.0",
+    "scipy>=1.10.0",
+    
+    # Visualization and monitoring
+    "matplotlib>=3.7.0",
+    "seaborn>=0.12.0",
+    "tensorboard>=2.13.0",
+    "wandb>=0.15.0",
+    
+    # Utilities
+    "tqdm>=4.65.0",
+    "pyyaml>=6.0",
+    "click>=8.1.0",
+    "rich>=13.0.0",
+    "omegaconf>=2.3.0",
+]
 
 setup(
     name="llm-trainer",
@@ -45,6 +74,9 @@ setup(
         ],
         "distributed": [
             "deepspeed>=0.9.0",
+        ],
+        "mixed-precision": [
+            "apex",
         ],
     },
     entry_points={

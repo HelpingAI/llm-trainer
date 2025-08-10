@@ -5,6 +5,81 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] - 2025-06-21
+
+### Overview
+
+This release introduces **optional integration with HuggingFace Accelerate and PEFT (LoRA)** for distributed and parameter-efficient training, along with improved extensibility for custom model architectures. The update standardizes configuration options, enhances trainer logic, and improves documentation for advanced users and tool developers.
+
+---
+
+### Features
+
+- **Accelerate Integration**
+    - Native support for HuggingFace Accelerate in the training pipeline.
+    - Enable with `use_accelerate=true` and configure mixed precision via `accelerate_mixed_precision`.
+    - Trainer automatically detects and configures device, distributed backend, and mixed precision.
+    - **Affected files:**  
+        - `src/llm_trainer/training/trainer.py`
+        - `src/llm_trainer/config/training_config.py`
+
+- **PEFT/LoRA Adapter Support**
+    - Optional integration with PEFT for LoRA and other adapter-based fine-tuning.
+    - Enable with `use_peft=true` and configure LoRA parameters (`peft_type`, `peft_r`, `peft_alpha`, `peft_dropout`, etc.).
+    - Trainer applies adapters automatically if PEFT is installed.
+    - **Affected files:**  
+        - `src/llm_trainer/training/trainer.py`
+        - `src/llm_trainer/config/training_config.py`
+
+- **Extensible Model Interface**
+    - Refactored `models/__init__.py` to expose `BaseLanguageModel` and `HuggingFaceModelWrapper`.
+    - Users can implement custom architectures by subclassing `BaseLanguageModel`.
+    - Improved documentation for model extension points.
+
+---
+
+### Improvements
+
+- **Configuration System**
+    - Added new fields to `TrainingConfig` for Accelerate and PEFT/LoRA.
+    - Improved validation and device logic for distributed and mixed precision training.
+    - Automatic adjustment of backend and AMP settings for CPU/GPU/MPS.
+
+- **Trainer Logic**
+    - Refactored trainer initialization to support Accelerate, PEFT/LoRA, and improved distributed/mixed precision logic.
+    - More robust error handling for missing dependencies and configuration edge cases.
+
+- **Documentation**
+    - Updated `README.md` with new features, installation, and usage instructions for Accelerate and PEFT/LoRA.
+    - Enhanced quick start and configuration sections for advanced training scenarios.
+
+---
+
+### Refactoring
+
+- **Code Consistency**
+    - Standardized method signatures and return types for trainer and model interfaces.
+    - Improved type hints and docstrings for generator and union return types.
+
+---
+
+### Documentation
+
+- **README.md**
+    - Added "What's New" section for Accelerate and PEFT/LoRA.
+    - Improved formatting and clarity in compatibility and quick start sections.
+
+---
+
+### Technical Implementation
+
+- **Modified Core Files**
+    - `src/llm_trainer/config/training_config.py`: Added Accelerate and PEFT/LoRA fields, improved validation and device logic.
+    - `src/llm_trainer/models/__init__.py`: Refactored to expose standardized interfaces and document extension points.
+    - `src/llm_trainer/training/trainer.py`: Refactored trainer initialization for Accelerate, PEFT/LoRA, and improved distributed/mixed precision logic.
+
+---
+
 ## [0.2.1] - 2025-7-25 - HuggingFace Tokenizer Integration
 
 This release introduces seamless integration with HuggingFace's pretrained tokenizers, enabling users to leverage existing vocabularies from popular models like Mistral, Llama, GPT-2, and more. This integration provides maximum compatibility and flexibility for fine-tuning and continued training scenarios.

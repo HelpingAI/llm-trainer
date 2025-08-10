@@ -13,55 +13,102 @@
 
 ---
 
+## 🔔 What's New
+
+Optional compatibility with HF Transformers, Accelerate, and PEFT (LoRA):
+
+- Use any Hugging Face tokenizer via `HFTokenizerWrapper`
+- Wrap an HF Causal LM with `HuggingFaceModelWrapper` and train with this trainer
+- Turn on Accelerate: set `use_accelerate=true` in `TrainingConfig`
+- Apply LoRA adapters: set `use_peft=true` and `peft_*` fields in `TrainingConfig` (requires `peft`)
+
+Minimal JSON training config:
+
+```json
+{
+  "training": {
+    "use_accelerate": true,
+    "accelerate_mixed_precision": "fp16",
+    "use_peft": true,
+    "peft_type": "lora",
+    "peft_r": 8,
+    "peft_alpha": 16,
+    "peft_dropout": 0.05
+  }
+}
+```
+
+Use your own architecture by implementing `BaseLanguageModel` (see `src/llm_trainer/models/base_model.py`) and passing it to `Trainer`.
+
+## 📚 Table of Contents
+
+- Features
+- Requirements
+- Installation
+- Quick Start
+  - Python API
+  - Command Line
+  - Complete Pipeline
+  - Using a Hugging Face Tokenizer/Model
+- Configuration
+- Project Structure
+- Documentation
+- Development
+- Contributing
+- License
+- Acknowledgments
+- Support
+
 ## ✨ Features
 
-- 🏗️ **Custom Transformer Architecture**: Complete implementation from scratch with multi-head attention, feed-forward networks, and positional encoding
-- 🔤 **BPE Tokenizer**: Byte Pair Encoding tokenizer implemented from scratch with Unicode and emoji support
-- 📊 **Data Pipeline**: Efficient data loading from Hugging Face datasets with preprocessing and batching
-- 💻 **CPU Training Support**: Full CPU training capabilities with optimized configurations - no GPU required!
--  **Training Infrastructure**: Distributed training support (GPU/CPU), gradient accumulation, and checkpointing
-- 🎯 **Inference Engine**: Text generation with multiple decoding strategies (greedy, beam search, sampling)
-- 📈 **Monitoring**: Integration with TensorBoard and Weights & Biases
-- ⚡ **Performance**: Mixed precision training (GPU), gradient checkpointing, and memory optimization
-- 🔧 **Flexible Configuration**: YAML/JSON configuration files for easy experimentation
-- 📦 **Production Ready**: Model saving/loading, evaluation metrics, and deployment utilities
+- 🏗️ **Custom Transformer Architecture**: Multi-head attention, feed-forward networks, positional encodings
+- 🔤 **BPE Tokenizer**: From-scratch BPE with Unicode and emoji support
+- 📊 **Data Pipeline**: Efficient HF datasets loading with preprocessing and batching
+- 💻 **CPU Training Support**: Optimized configs—no GPU required
+- ⚙️ **Training Infrastructure**: Distributed support (GPU/CPU), grad accumulation, checkpointing
+- 🎯 **Inference Engine**: Greedy/beam/nucleus/top-k decoding
+- 📈 **Monitoring**: TensorBoard and Weights & Biases
+- ⚡ **Performance**: Mixed precision (GPU), grad checkpointing, memory optimizations
+- 🔧 **Flexible Configuration**: YAML/JSON configs for experiments
+- 📦 **Production Ready**: Save/load, evaluation metrics, deployment utilities
 
-## 🚀 Quick Start
+## ✅ Requirements
 
-### 📋 Prerequisites
+- Python 3.8 or higher
+- PyTorch 2.0 or higher
+- GPU: CUDA-compatible GPU (recommended) or CPU-only mode
+- Memory: 8GB RAM minimum (16GB+ recommended)
 
-> [!IMPORTANT]
-> - Python 3.8 or higher
-> - PyTorch 2.0 or higher
-> - **GPU**: CUDA-compatible GPU (recommended for faster training)
-> - **CPU**: Any modern multi-core CPU (accessible alternative)
-> - At least 8GB RAM (16GB+ recommended)
+## 🧩 Installation
 
-### 📦 Installation
-
-```bash
+```powershell
 # Clone the repository
 git clone https://github.com/OEvortex/llm-trainer.git
 cd llm-trainer
 
-# Create virtual environment (recommended)
+# Create and activate a virtual environment (Windows PowerShell)
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+./venv/Scripts/Activate.ps1
 
-# Install dependencies
-pip install -r requirements.txt
-
-# Install the package in development mode
+# Install the package (installs all core dependencies from setup.py)
 pip install -e .
+
+# Optional extras
+# Development tools (tests, linters, type checking)
+pip install -e ".[dev]"
+# Distributed training (DeepSpeed)
+pip install -e ".[distributed]"
+# LoRA/PEFT support when using use_peft=true
+pip install peft
 ```
 
-> [!NOTE]
-> For distributed training, install DeepSpeed: `pip install deepspeed>=0.9.0`
+> On macOS/Linux, activate the venv with: `source venv/bin/activate`.
+>
+> For mixed precision with NVIDIA Apex, install: `pip install -e ".[mixed-precision]"` (Apex must be available for your environment).
 
-> [!WARNING]
-> Training large models requires significant computational resources. Start with the small model configuration for experimentation.
+## 🚀 Quick Start
 
-### 🐍 Option 1: Using Python API
+### 🐍 Option 1: Using the Python API
 
 ```python
 from llm_trainer.config import ModelConfig, TrainingConfig, DataConfig
@@ -110,15 +157,15 @@ trainer = Trainer(model, tokenizer, training_config)
 trainer.train_from_config(model_config, data_config)
 ```
 
-### 🚀 Using a HuggingFace Pretrained Tokenizer
+### 🤗 Using a Hugging Face Pretrained Tokenizer/Model
 
-You can use a pretrained tokenizer from HuggingFace (e.g., Mistral, Llama, etc.) in your training pipeline via `HFTokenizerWrapper`:
+You can use a pretrained tokenizer from Hugging Face (e.g., Mistral, Llama, etc.) via `HFTokenizerWrapper`:
 
 ```python
 from llm_trainer.tokenizer import HFTokenizerWrapper
 from transformers import MistralConfig, MistralForCausalLM
 
-# Load a pretrained tokenizer from HuggingFace
+# Load a pretrained tokenizer from Hugging Face
 hf_tokenizer = HFTokenizerWrapper("mistralai/Mistral-7B-Instruct-v0.2")
 hf_tokenizer.tokenizer.pad_token = hf_tokenizer.tokenizer.eos_token  # Set padding token if needed
 
@@ -141,11 +188,10 @@ model = MistralForCausalLM(model_config)
 # Use hf_tokenizer in your Trainer or data pipeline as you would with any tokenizer
 ```
 
-
-### 💻 Option 2: Using Command Line
+### 💻 Option 2: Using the Command Line
 
 #### GPU Training (Faster)
-```bash
+```powershell
 # Train a model using GPU configuration
 python scripts/train.py --config configs/small_model.yaml --output_dir ./output
 
@@ -154,7 +200,7 @@ python scripts/train.py --config configs/medium_model.yaml --output_dir ./output
 ```
 
 #### CPU Training (Accessible - No GPU Required!)
-```bash
+```powershell
 # Train small model on CPU (recommended for CPU)
 python scripts/train.py --config configs/cpu_small_model.yaml --output_dir ./output/cpu_small
 
@@ -163,7 +209,7 @@ python scripts/train.py --config configs/cpu_medium_model.yaml --output_dir ./ou
 ```
 
 #### Text Generation and Evaluation
-```bash
+```powershell
 # Generate text interactively (works with both CPU and GPU trained models)
 python scripts/generate.py --model_path ./output --prompts "The quick brown fox" --interactive
 
@@ -171,12 +217,11 @@ python scripts/generate.py --model_path ./output --prompts "The quick brown fox"
 python scripts/evaluate.py --model_path ./output --dataset_config configs/eval_config.json
 ```
 
-> [!TIP]
-> **New to LLM training?** Start with [`configs/cpu_small_model.yaml`](configs/cpu_small_model.yaml:1) for accessible CPU training, then move to [`configs/small_model.yaml`](configs/small_model.yaml:1) when you have GPU access.
+> Tip: New to LLM training? Start with `configs/cpu_small_model.yaml` for accessible CPU training, then move to `configs/small_model.yaml` when you have GPU access.
 
 ### 🔄 Option 3: Complete Pipeline Example
 
-```bash
+```powershell
 # Run the complete pipeline (tokenizer + training + evaluation)
 python examples/complete_pipeline.py
 
@@ -184,35 +229,7 @@ python examples/complete_pipeline.py
 python examples/train_small_model.py
 ```
 
-> [!NOTE]
 > The complete pipeline includes tokenizer training, model training, text generation, and evaluation metrics.
-
-## 📁 Project Structure
-
-```
-llm-trainer/
-├── 📦 src/llm_trainer/           # Main package
-│   ├── 🏗️ models/                # Transformer architecture
-│   ├── 🔤 tokenizer/             # BPE tokenizer implementation
-│   ├── 📊 data/                  # Data loading and preprocessing
-│   ├── 🚀 training/              # Training infrastructure
-│   ├── 🛠️ utils/                 # Utility functions
-│   └── ⚙️ config/                # Configuration classes
-├── 📜 scripts/                   # Training and inference scripts
-├── ⚙️ configs/                   # Configuration files
-├── 🧪 tests/                     # Unit tests
-├── 📖 examples/                  # Usage examples
-└── 📚 docs/                      # Documentation
-```
-
-## 📚 Documentation
-
-- 📖 [Getting Started Guide](docs/getting_started.md) - Complete setup and first steps
-- 🏗️ [Model Architecture](docs/architecture.md) - Transformer implementation details
-- 🚀 [Training Guide](docs/training.md) - Comprehensive training tutorial (includes CPU training)
-- 💻 [CPU Training Guide](docs/cpu_training.md) - Dedicated CPU training documentation
-- 🔤 [Tokenizer Details](docs/tokenizer.md) - BPE tokenizer documentation
-- 📋 [API Reference](docs/api.md) - Complete API documentation
 
 ## 🔧 Configuration
 
@@ -248,34 +265,59 @@ training:
   gradient_accumulation_steps: 8
 ```
 
-> [!CAUTION]
-> Large models require significant GPU memory. Monitor your system resources during training.
+> Caution: Large models require significant GPU memory. Monitor your system resources during training.
+
+## 🗂️ Project Structure
+
+```
+llm-trainer/
+├── 📦 src/llm_trainer/           # Main package
+│   ├── 🏗️ models/                # Transformer architecture
+│   ├── 🔤 tokenizer/             # BPE tokenizer implementation
+│   ├── 📊 data/                  # Data loading and preprocessing
+│   ├── 🚀 training/              # Training infrastructure
+│   ├── 🛠️ utils/                 # Utility functions
+│   └── ⚙️ config/                # Configuration classes
+├── 📜 scripts/                   # Training and inference scripts
+├── ⚙️ configs/                   # Configuration files
+├── 🧪 tests/                     # Unit tests
+├── 📖 examples/                  # Usage examples
+└── 📚 docs/                      # Documentation
+```
+
+## 📚 Documentation
+
+- 📖 [Getting Started Guide](docs/getting_started.md) — Complete setup and first steps
+- 🏗️ [Model Architecture](docs/architecture.md) — Transformer implementation details
+- 🚀 [Training Guide](docs/training.md) — Comprehensive training tutorial (includes CPU training)
+- 💻 [CPU Training Guide](docs/cpu_training.md) — Dedicated CPU training documentation
+- 🔤 [Tokenizer Details](docs/tokenizer.md) — BPE tokenizer documentation
+- 📋 [API Reference](docs/api.md) — Complete API documentation
 
 ## 🎯 Key Features Explained
 
 ### 🔤 Advanced BPE Tokenizer
-- **Unicode Support**: Handles international characters, emojis, and symbols
-- **Efficient Training**: Fast BPE algorithm with dataset streaming
-- **Special Tokens**: Configurable special tokens (PAD, UNK, BOS, EOS)
-- **Compatibility**: Works with Hugging Face datasets
+- Unicode support: international characters, emojis, and symbols
+- Efficient training: fast BPE with dataset streaming
+- Special tokens: PAD, UNK, BOS, EOS
+- HF-compatible datasets
 
 ### 🏗️ Transformer Architecture
-- **Multi-Head Attention**: Scaled dot-product attention with causal masking
-- **Feed-Forward Networks**: Position-wise feed-forward with configurable activation
-- **Layer Normalization**: Pre-norm and post-norm support
-- **Positional Encoding**: Sinusoidal and learned positional embeddings
+- Scaled dot-product attention with causal masking
+- Position-wise feed-forward with configurable activation
+- Pre-norm/post-norm layer normalization
+- Sinusoidal or learned positional embeddings
 
 ### 🚀 Training Infrastructure
-- **Distributed Training**: Multi-GPU support with DDP and DeepSpeed
-- **Mixed Precision**: Automatic mixed precision with FP16/BF16
-- **Gradient Accumulation**: Memory-efficient training for large batches
-- **Checkpointing**: Automatic saving and resuming from checkpoints
+- Distributed training (DDP and DeepSpeed)
+- Automatic mixed precision FP16/BF16
+- Gradient accumulation for large batches
+- Checkpointing (save/resume)
 
-### 🎯 Text Generation
-- **Multiple Strategies**: Greedy, beam search, nucleus sampling, top-k sampling
-- **Temperature Control**: Fine-tune randomness in generation
-- **Repetition Penalty**: Reduce repetitive outputs
-- **Interactive Mode**: Real-time text generation interface
+### ✍️ Text Generation
+- Greedy, beam search, nucleus sampling, top-k sampling
+- Temperature control and repetition penalty
+- Interactive mode for real-time generation
 
 ## 🛠️ Development
 

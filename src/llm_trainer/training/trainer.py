@@ -24,7 +24,7 @@ from .utils import (
 
 class Trainer:
     """Main trainer class for language model training."""
-    
+
     def __init__(self,
                  model: TransformerLM,
                  tokenizer,
@@ -48,26 +48,40 @@ class Trainer:
         self.config = config
         self.data_config = data_config
         self.formatting_func = formatting_func
-        
+
         # Setup logging
         setup_logging(config.log_level)
         self.logger = logging.getLogger(__name__)
-        
+
         # Set random seed
         set_seed(config.seed)
-        
+
         # Setup device and distributed training
         self.device = self.config.get_effective_device()
         self.is_distributed = config.world_size > 1
         self.local_rank = config.local_rank
-        
-        # Move model to device
-        self.model = self.model.to(self.device)
-        
-        # Setup distributed training
-        if self.is_distributed:
+
+        # Move model to device (skip if using Accelerate)
+        self.accelerator = None
+        if not getattr(self.config, 'use_accelerate', False):
+            self.model = self.model.to(self.device)
+
+        # Setup distributed training (handled by Accelerate if enabled)
+        if self.is_distributed and not getattr(self.config, 'use_accelerate', False):
             self._setup_distributed()
-        
+        # Optional: integrate Accelerate
+        if getattr(self.config, 'use_accelerate', False):
+            try:
+                from accelerate import Accelerator
+                mixed_precision = getattr(self.config, 'accelerate_mixed_precision', 'no')
+                self.accelerator = Accelerator(mixed_precision=mixed_precision if mixed_precision in ["no", "fp16", "bf16"] else "no")
+                self.device = self.accelerator.device
+                self.logger.info(f"Accelerate enabled with mixed_precision={mixed_precision}, device={self.device}")
+            except ImportError:
+                self.logger.warning("Accelerate not installed; proceeding without it.")
+                self.accelerator = None
+
+
         # Create optimizer
         self.optimizer = create_optimizer(
             model=self.model,
@@ -78,34 +92,58 @@ class Trainer:
             beta2=config.beta2,
             eps=config.eps
         )
-        
+
         # Setup gradient clipping
         self.gradient_clipper = GradientClipping(max_norm=config.max_grad_norm)
-        
+
         # Setup EMA if requested
         self.ema = None
         if hasattr(config, 'use_ema') and config.use_ema:
             ema_decay = getattr(config, 'ema_decay', 0.999)
             self.ema = ExponentialMovingAverage(self.model, decay=ema_decay)
-        
+
         # Setup mixed precision training
         self.use_amp = self.config.should_use_amp()
         self.scaler = None
-        if self.use_amp:
-            self.scaler = torch.cuda.amp.GradScaler()
-        
+        if self.use_amp and not getattr(self.config, 'use_accelerate', False):
+            # Use new torch.amp API
+            self.scaler = torch.amp.GradScaler('cuda')
+
         # Setup datasets and dataloaders
+        # Optionally apply PEFT adapters (LoRA) if requested
+        self.peft_applied = False
+        if getattr(self.config, 'use_peft', False):
+            try:
+                from peft import LoraConfig, TaskType, get_peft_model  # type: ignore
+                task_type = getattr(self.config, 'peft_task_type', 'CAUSAL_LM')
+                task_enum = getattr(TaskType, task_type, TaskType.CAUSAL_LM)
+                lora_config = LoraConfig(
+                    r=getattr(self.config, 'peft_r', 8),
+                    lora_alpha=getattr(self.config, 'peft_alpha', 16),
+                    lora_dropout=getattr(self.config, 'peft_dropout', 0.05),
+                    bias=getattr(self.config, 'peft_bias', 'none'),
+                    task_type=task_enum,
+                    target_modules=getattr(self.config, 'peft_target_modules', None)
+                )
+                self.model = get_peft_model(self.model, lora_config)
+                self.peft_applied = True
+                self.logger.info("PEFT adapters applied (LoRA)")
+            except ImportError:
+                self.logger.warning("peft not installed; skipping PEFT integration.")
+            except Exception as e:
+                self.logger.warning(f"Failed to apply PEFT adapters: {e}")
+
         self.train_dataset = train_dataset
         self.eval_dataset = eval_dataset
         self.train_dataloader = None
         self.eval_dataloader = None
-        
+
         if train_dataset is not None:
             self._setup_dataloaders()
-        
+
         # Calculate total training steps
         self.total_steps = self._calculate_total_steps()
-        
+
         # Create learning rate scheduler
         self.scheduler = create_scheduler(
             optimizer=self.optimizer,
@@ -114,23 +152,23 @@ class Trainer:
             warmup_steps=config.warmup_steps,
             min_lr_ratio=config.min_lr_ratio
         )
-        
+
         # Training state
         self.current_epoch = 0
         self.current_step = 0
         self.best_eval_loss = float('inf')
-        
+
         # Metrics tracking
         self.metrics_tracker = MetricsTracker()
-        
+
         # Setup monitoring
         self._setup_monitoring()
-        
+
         # Log model information
         log_model_info(self.model, self.logger)
-        
+
         self.logger.info(f"Trainer initialized with {self.total_steps} total training steps")
-    
+
     def _setup_distributed(self):
         """Setup distributed training."""
         if not torch.distributed.is_initialized():
@@ -139,19 +177,20 @@ class Trainer:
                 rank=self.local_rank,
                 world_size=self.config.world_size
             )
-        
+
         # Wrap model for distributed training
         self.model = torch.nn.parallel.DistributedDataParallel(
             self.model,
             device_ids=[self.local_rank] if self.device.type == "cuda" else None,
             find_unused_parameters=False
         )
-        
+
         self.logger.info(f"Distributed training setup: rank {self.local_rank}/{self.config.world_size}")
-    
+
     def _setup_dataloaders(self):
         """Setup training and evaluation dataloaders."""
-        if self.is_distributed:
+        use_accel = getattr(self.config, 'use_accelerate', False) and self.accelerator is not None
+        if self.is_distributed and not use_accel:
             self.train_dataloader = create_distributed_dataloader(
                 dataset=self.train_dataset,
                 batch_size=self.config.batch_size,
@@ -164,6 +203,7 @@ class Trainer:
                 pad_token_id=self.tokenizer.pad_token_id
             )
         else:
+            # For Accelerate or single-process, use regular DataLoader; Accelerate will wrap it
             self.train_dataloader = create_dataloader(
                 dataset=self.train_dataset,
                 batch_size=self.config.batch_size,
@@ -173,7 +213,7 @@ class Trainer:
                 drop_last=self.config.dataloader_drop_last,
                 pad_token_id=self.tokenizer.pad_token_id
             )
-        
+
         if self.eval_dataset is not None:
             if self.is_distributed:
                 self.eval_dataloader = create_distributed_dataloader(
@@ -325,9 +365,10 @@ class Trainer:
             pbar = self.train_dataloader
 
         for batch_idx, batch in enumerate(pbar):
-            # Move batch to device
-            batch = {k: v.to(self.device) if isinstance(v, torch.Tensor) else v
-                    for k, v in batch.items()}
+            # With Accelerate, tensors are already on correct device
+            if not (getattr(self.config, 'use_accelerate', False) and self.accelerator is not None):
+                # Move batch to device
+                batch = {k: v.to(self.device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
 
             # Forward pass
             loss = self._training_step(batch)
@@ -354,7 +395,7 @@ class Trainer:
 
                 # Evaluate
                 if self._should_evaluate():
-                    eval_loss = self._evaluate()
+                    _ = self._evaluate()
                     self.model.train()  # Return to training mode
 
                 # Save checkpoint
@@ -380,8 +421,11 @@ class Trainer:
 
     def _training_step(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
         """Perform a single training step."""
-        if self.use_amp and self.device.type == "cuda":
-            with torch.cuda.amp.autocast():
+        if getattr(self.config, 'use_accelerate', False) and self.accelerator is not None:
+            outputs = self.model(**batch)
+            loss = outputs["loss"]
+        elif self.use_amp and self.device.type == "cuda":
+            with torch.amp.autocast('cuda'):
                 outputs = self.model(**batch)
                 loss = outputs["loss"]
         else:
@@ -407,14 +451,14 @@ class Trainer:
             self.scaler.unscale_(self.optimizer)
 
             # Clip gradients
-            grad_norm = self.gradient_clipper.clip_gradients(self.model)
+            _ = self.gradient_clipper.clip_gradients(self.model)
 
             # Optimizer step
             self.scaler.step(self.optimizer)
             self.scaler.update()
         else:
             # Clip gradients
-            grad_norm = self.gradient_clipper.clip_gradients(self.model)
+            _ = self.gradient_clipper.clip_gradients(self.model)
 
             # Optimizer step
             self.optimizer.step()
@@ -439,7 +483,7 @@ class Trainer:
 
                 # Forward pass
                 if self.use_amp and self.device.type == "cuda":
-                    with torch.cuda.amp.autocast():
+                    with torch.amp.autocast('cuda'):
                         outputs = self.model(**batch)
                         loss = outputs["loss"]
                 else:
@@ -673,21 +717,21 @@ class Trainer:
                     print(f"Warning: Validation split '{data_config.validation_split}' not found in dataset.")
                     print("Available splits are shown in the error above.")
                     print("Creating validation set from training data...")
-                    
+
                     # Create validation set from training data
                     train_size = len(self.train_dataset)
                     val_size = min(1000, train_size // 10)  # Use 10% or 1000 samples, whichever is smaller
-                    
+
                     # Split the training dataset
                     split_dataset = self.train_dataset.dataset.train_test_split(
-                        test_size=val_size, 
-                        shuffle=True, 
+                        test_size=val_size,
+                        shuffle=True,
                         seed=42
                     )
-                    
+
                     # Update training dataset to use the train split
                     self.train_dataset.dataset = split_dataset['train']
-                    
+
                     # Create validation dataset
                     self.eval_dataset = LanguageModelingDataset(
                         dataset_name=dataset_name,
@@ -706,7 +750,7 @@ class Trainer:
                     )
                     # Override with the test split
                     self.eval_dataset.dataset = split_dataset['test']
-                    
+
                     print(f"Created validation set with {val_size} samples from training data.")
                 else:
                     raise e            # Setup dataloaders

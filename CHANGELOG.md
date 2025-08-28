@@ -5,6 +5,115 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.3] - 2025-08-28
+
+### Overview
+
+This release introduces **SafeTensors support for model save/load operations** with enhanced metadata handling, automatic sharding, and improved project packaging. The update provides safer and more efficient model serialization while maintaining backward compatibility with PyTorch format.
+
+---
+
+### Features
+
+- **SafeTensors Model Format Support**
+    - Added optional SafeTensors utilities import with fallback warnings for enhanced error handling.
+    - Implemented `save_pretrained` method with SafeTensors and PyTorch fallback support.
+    - Implemented `from_pretrained` method supporting both SafeTensors and PyTorch formats with automatic detection.
+    - Added SafeTensors metadata handling and automatic sharding support for large models.
+    - Extended TransformerLM and BaseLanguageModel with SafeTensors save/load logic for seamless integration.
+    - **Affected files:**  
+        - `src/llm_trainer/models/safetensors_utils.py`
+        - `src/llm_trainer/models/base_model.py`
+        - `src/llm_trainer/models/transformer.py`
+
+- **Enhanced Project Metadata**
+    - Added authors and email metadata in `__init__.py` for improved package information.
+    - Centralized metadata management for better package distribution.
+    - **Affected files:**  
+        - `src/llm_trainer/__init__.py`
+
+- **Project Packaging Improvements**
+    - Removed `setup.py` to clean up project packaging strategy and modernize distribution approach.
+    - Streamlined dependency management and build configuration.
+
+---
+
+### Improvements
+
+- **Model Serialization**
+    - SafeTensors set as default format for model saving with automatic fallback to PyTorch format.
+    - Enhanced model loading with automatic format detection and robust error handling.
+    - Improved metadata preservation during model save/load operations.
+    - Support for both single-file and sharded model saving with customizable shard sizes.
+
+- **Error Handling & Robustness**
+    - Added comprehensive fallback mechanisms for SafeTensors operations.
+    - Enhanced error messages and warnings for missing dependencies.
+    - Improved backward compatibility with existing PyTorch model files.
+
+- **Performance Optimizations**
+    - Faster model loading through SafeTensors format when available.
+    - Reduced memory usage during model serialization operations.
+    - Optimized sharding logic for large model handling.
+
+---
+
+### Technical Implementation
+
+- **SafeTensors Integration**
+    - Optional dependency with graceful degradation when not available.
+    - Automatic format detection based on file extensions and content.
+    - Comprehensive metadata handling including model configuration and training statistics.
+    - Support for both `.safetensors` single files and sharded `.safetensors` collections.
+
+- **Backward Compatibility**
+    - Existing PyTorch `.pt` and `.pth` files continue to work seamlessly.
+    - Automatic migration path from PyTorch to SafeTensors format.
+    - Configuration-driven format selection for different use cases.
+
+---
+
+### Modified Core Files
+
+- **`src/llm_trainer/models/safetensors_utils.py`**: New utility module for SafeTensors operations with fallback handling.
+- **`src/llm_trainer/models/base_model.py`**: Extended with SafeTensors save/load methods and automatic format detection.
+- **`src/llm_trainer/models/transformer.py`**: Enhanced TransformerLM with SafeTensors support and metadata handling.
+- **`src/llm_trainer/__init__.py`**: Added authors and email metadata for improved package information.
+- **Removed `setup.py`**: Cleaned up project packaging strategy for modern distribution approach.
+
+---
+
+### Usage Examples
+
+#### **SafeTensors Model Saving**
+```python
+from llm_trainer.models import TransformerLM
+
+# Save in SafeTensors format (default)
+model = TransformerLM(config)
+model.save_pretrained("./my_model", safe_serialization=True)
+
+# Save with custom shard size
+model.save_pretrained("./my_model", safe_serialization=True, max_shard_size="2GB")
+```
+
+#### **Automatic Format Detection**
+```python
+# Load automatically detects SafeTensors or PyTorch format
+model = TransformerLM.from_pretrained("./my_model")
+
+# Explicit format specification
+model = TransformerLM.from_pretrained("./my_model", safe_serialization=True)
+```
+
+#### **Fallback Behavior**
+```python
+# Graceful fallback when SafeTensors not available
+model.save_pretrained("./my_model")  # Uses PyTorch format if SafeTensors unavailable
+```
+
+---
+
 ## [0.2.2] - 2025-06-21
 
 ### Overview

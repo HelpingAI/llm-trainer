@@ -10,7 +10,7 @@ This package provides:
 - Inference and generation capabilities
 """
 
-__version__ = "0.2.1"
+__version__ = "0.2.3"
 __author__ = "OEvortex"
 __email__ = "helpingai5@gmail.com"
 __authors__ = [{"name": "OEvortex", "email": "helpingai5@gmail.com"}]

@@ -3,7 +3,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Optional, Tuple, Dict, Any
+from typing import Optional, Tuple, Dict, Any, Union
 import math
 
 from ..config import ModelConfig
@@ -226,34 +226,114 @@ class TransformerLM(nn.Module):
         """Create model from configuration."""
         return cls(config)
     
-    def save_pretrained(self, save_directory: str) -> None:
-        """Save model and configuration."""
+    def save_pretrained(self, save_directory: str, 
+                       safe_serialization: bool = True,
+                       max_shard_size: Union[str, int] = "5GB",
+                       push_to_hub: bool = False,
+                       **kwargs) -> None:
+        """
+        Save model and configuration.
+        
+        Args:
+            save_directory: Directory to save the model
+            safe_serialization: Whether to use SafeTensors format (default: True)
+            max_shard_size: Maximum size per shard for large models (e.g., "5GB", "500MB")
+            push_to_hub: Whether to push to Hugging Face Hub (not implemented)
+            **kwargs: Additional arguments
+        """
         import os
         os.makedirs(save_directory, exist_ok=True)
         
-        # Save model state dict
-        model_path = os.path.join(save_directory, "pytorch_model.bin")
-        torch.save(self.state_dict(), model_path)
+        # Try to save with SafeTensors first if requested
+        if safe_serialization:
+            try:
+                from .safetensors_utils import save_model_safetensors, is_safetensors_available
+                
+                if is_safetensors_available():
+                    # Prepare metadata
+                    metadata = {
+                        "model_type": "transformer",
+                        "framework": "pytorch",
+                        "d_model": str(self.config.d_model),
+                        "n_layers": str(self.config.n_layers),
+                        "n_heads": str(self.config.n_heads),
+                        "vocab_size": str(self.config.vocab_size),
+                    }
+                    
+                    # Save with SafeTensors (with automatic sharding for large models)
+                    save_model_safetensors(self, save_directory, max_shard_size, metadata)
+                else:
+                    print("Warning: SafeTensors not available, falling back to PyTorch format")
+                    safe_serialization = False
+            except Exception as e:
+                print(f"Warning: Failed to save with SafeTensors ({e}), falling back to PyTorch format")
+                safe_serialization = False
+        
+        # Fallback to PyTorch format or if SafeTensors failed
+        if not safe_serialization:
+            model_path = os.path.join(save_directory, "pytorch_model.bin")
+            torch.save(self.state_dict(), model_path)
+            print(f"Model saved in PyTorch format to {model_path}")
         
         # Save configuration
         config_path = os.path.join(save_directory, "config.json")
         self.config.save(config_path)
     
     @classmethod
-    def from_pretrained(cls, load_directory: str) -> 'TransformerLM':
-        """Load model from directory."""
+    def from_pretrained(cls, load_directory: str, **kwargs) -> 'TransformerLM':
+        """
+        Load model from directory with support for both SafeTensors and PyTorch formats.
+        
+        Args:
+            load_directory: Directory containing the saved model
+            **kwargs: Additional arguments
+            
+        Returns:
+            Loaded TransformerLM model
+        """
         import os
         
         # Load configuration
         config_path = os.path.join(load_directory, "config.json")
+        if not os.path.exists(config_path):
+            raise FileNotFoundError(f"Config file not found: {config_path}")
+        
         config = ModelConfig.load(config_path)
         
         # Create model
         model = cls(config)
         
-        # Load state dict
-        model_path = os.path.join(load_directory, "pytorch_model.bin")
-        state_dict = torch.load(model_path, map_location='cpu')
-        model.load_state_dict(state_dict)
+        # Try to load from SafeTensors first, then fallback to PyTorch
+        safetensors_path = os.path.join(load_directory, "model.safetensors")
+        safetensors_index_path = os.path.join(load_directory, "model.safetensors.index.json")
+        pytorch_path = os.path.join(load_directory, "pytorch_model.bin")
+        
+        if os.path.exists(safetensors_path) or os.path.exists(safetensors_index_path):
+            try:
+                from .safetensors_utils import load_model_safetensors, is_safetensors_available
+                
+                if is_safetensors_available():
+                    load_model_safetensors(model, load_directory)
+                    print("Model loaded from SafeTensors format")
+                else:
+                    raise ImportError("SafeTensors not available")
+            except Exception as e:
+                print(f"Warning: Failed to load SafeTensors ({e}), trying PyTorch format")
+                if os.path.exists(pytorch_path):
+                    state_dict = torch.load(pytorch_path, map_location='cpu')
+                    model.load_state_dict(state_dict)
+                    print("Model loaded from PyTorch format")
+                else:
+                    raise FileNotFoundError(f"No loadable model found in {load_directory}")
+        elif os.path.exists(pytorch_path):
+            # Load PyTorch format
+            state_dict = torch.load(pytorch_path, map_location='cpu')
+            model.load_state_dict(state_dict)
+            print("Model loaded from PyTorch format")
+        else:
+            raise FileNotFoundError(
+                f"No model files found in {load_directory}. "
+                f"Expected 'model.safetensors', 'model.safetensors.index.json', or 'pytorch_model.bin'"
+            )
         
         return model

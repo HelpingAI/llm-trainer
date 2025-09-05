@@ -25,7 +25,7 @@ classifiers = [
 keywords = [
     "llm", "language-model", "transformer", "pytorch", "deep-learning",
     "nlp", "machine-learning", "training", "inference", "tokenizer",
-    "bpe", "wordpiece", "huggingface", "safetensors"
+    "bpe", "wordpiece", "huggingface", "safetensors", "trl"
 ]
 dependencies = [
     # Core ML libraries
@@ -83,6 +83,9 @@ mixed-precision = [
 safetensors = [
     "safetensors>=0.3.0",
 ]
+peft = [
+    "peft>=0.4.0",
+]
 full = [
     # All optional dependencies
     "pytest>=7.3.0",
@@ -92,6 +95,7 @@ full = [
     "deepspeed>=0.9.0",
     "apex",
     "safetensors>=0.3.0",
+    "peft>=0.4.0",
 ]
 
 [tool.setuptools]

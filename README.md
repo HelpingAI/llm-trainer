@@ -7,19 +7,21 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](https://opensource.org/licenses/Apache-2.0)
 [![GitHub](https://img.shields.io/badge/GitHub-HelpingAI/llm--trainer-black.svg)](https://github.com/HelpingAI/llm-trainer)
 [![SafeTensors](https://img.shields.io/badge/SafeTensors-Supported-brightgreen.svg)](https://github.com/huggingface/safetensors)
-[![Version](https://img.shields.io/badge/version-0.2.3-blue.svg)](https://github.com/HelpingAI/llm-trainer/releases)
+[![Version](https://img.shields.io/badge/version-0.2.4-blue.svg)](https://github.com/HelpingAI/llm-trainer/releases)
 
 *A production-ready framework for training Large Language Models from scratch with modern PyTorch*
 
 </div>
 
-## What's New in v0.2.3
+## What's New in v0.2.4
 
+- **Memory Optimizations**: Efficient training with kernel optimizations
 - **SafeTensors Support**: Secure model serialization with automatic sharding for large models
 - **HuggingFace Integration**: Use any pretrained tokenizer via `HFTokenizerWrapper`
 - **Accelerate Support**: Distributed training with `use_accelerate=true`
 - **LoRA/PEFT**: Parameter-efficient fine-tuning with `use_peft=true`
 - **Backward Compatible**: Existing PyTorch models continue to work
+- **Patching System**: Kernel optimizations and memory-efficient training
 
 ## Features
 
@@ -44,6 +46,10 @@
 - **Parameter-Efficient**: LoRA/PEFT adapters for memory-efficient fine-tuning
 - **Mixed Precision**: FP16/BF16 automatic mixed precision
 - **Multiple Decoding Strategies**: Greedy, beam search, nucleus (top-p), top-k sampling
+- **Enhanced Trainer**: TRL-style training methods with familiar APIs
+- **Memory-Efficient Optimizers**: Optimized implementations for better performance
+- **Kernel Optimizations**: Fused operations for better performance
+- **Low VRAM Training**: Gradient checkpointing and memory-efficient techniques
 
 ### Monitoring & Evaluation
 - **TensorBoard Integration**: Real-time training metrics and visualizations
@@ -84,76 +90,139 @@ pip install -e ".[full]"
 
 ## Quick Start
 
-### Python API
+### Python API - Enhanced Training
 
 ```python
-from llm_trainer.config import ModelConfig, TrainingConfig, DataConfig
+from llm_trainer import Trainer, TrainingConfig
 from llm_trainer.models import TransformerLM
+from llm_trainer.config import ModelConfig
 from llm_trainer.tokenizer import BPETokenizer
-from llm_trainer.training import Trainer
 
-# Create and train tokenizer
-tokenizer = BPETokenizer()
-tokenizer.train_from_dataset(
-    dataset_name="wikitext",
-    dataset_config="wikitext-2-raw-v1",
-    vocab_size=32000
-)
-
-# Configure model
+# Create model and tokenizer
 model_config = ModelConfig(
-    vocab_size=tokenizer.vocab_size,
+    vocab_size=32000,
     d_model=512,
     n_heads=8,
     n_layers=6,
     max_seq_len=1024
 )
-
-# Create model
 model = TransformerLM(model_config)
+tokenizer = BPETokenizer()
 
-# Configure training
+# Configure training with TRL-style parameters
 training_config = TrainingConfig(
-    batch_size=16,
-    learning_rate=1e-4,
-    num_epochs=3,
-    warmup_steps=1000,
-    checkpoint_dir="./checkpoints"
+    per_device_train_batch_size=4,
+    gradient_accumulation_steps=2,
+    learning_rate=2e-5,
+    num_train_epochs=3,
+    logging_steps=10,
+    save_steps=100,
+    optim="adamw"  # TRL-style parameter
 )
 
-# Configure data
-data_config = DataConfig(
-    dataset_name="wikitext",
-    dataset_config="wikitext-2-raw-v1",
-    max_length=1024
+# Create trainer and train
+trainer = Trainer(
+    model=model,
+    tokenizer=tokenizer,
+    config=training_config
 )
 
-# Train the model
-trainer = Trainer(model, tokenizer, training_config)
-trainer.train_from_config(model_config, data_config)
+# TRL-style training methods
+trainer.train()  # Standard training
+trainer.sft_train()  # Supervised fine-tuning
+trainer.dpo_train()  # Direct preference optimization
 ```
 
-### HuggingFace Integration
+### HuggingFace Integration with PEFT
 
 ```python
-from llm_trainer.tokenizer import HFTokenizerWrapper
-from llm_trainer.models import HuggingFaceModelWrapper
+from llm_trainer import Trainer, TrainingConfig
+from transformers import AutoModelForCausalLM, AutoTokenizer
+from peft import LoraConfig, TaskType
 
-# Load pretrained tokenizer and model
-tokenizer = HFTokenizerWrapper("microsoft/DialoGPT-medium")
-model = HuggingFaceModelWrapper("microsoft/DialoGPT-medium")
+# Load pretrained model and tokenizer
+model = AutoModelForCausalLM.from_pretrained("gpt2")
+tokenizer = AutoTokenizer.from_pretrained("gpt2")
 
-# Configure PEFT training
-training_config = TrainingConfig(
-    use_accelerate=True,
-    use_peft=True,
-    peft_type="lora",
-    peft_r=8,
-    peft_alpha=16
+# Configure LoRA (PEFT)
+lora_config = LoraConfig(
+    r=8,
+    lora_alpha=16,
+    lora_dropout=0.05,
+    task_type=TaskType.CAUSAL_LM
 )
 
-trainer = Trainer(model, tokenizer, training_config)
-trainer.train_from_config(model_config, data_config)
+# Create trainer with PEFT
+trainer = Trainer(
+    model=model,
+    tokenizer=tokenizer,
+    config=TrainingConfig(),
+    peft_config=lora_config  # Pass PEFT config directly
+)
+
+# Show parameter efficiency
+trainer.print_trainable_parameters()
+
+# Train with familiar API
+trainer.train()
+```
+
+### Memory-Efficient Optimizers
+
+```python
+from llm_trainer.training import create_optimizer
+
+# Create memory-efficient optimizer
+optimizer = create_optimizer(
+    model,
+    optimizer_name="adamw",
+    learning_rate=5e-5,
+    weight_decay=0.01
+)
+```
+
+### Patching for Transformers/TRL
+
+```python
+from llm_trainer import patch_transformers, patch_trl
+
+# Patch Hugging Face Transformers with memory-efficient optimizations
+patch_transformers()
+
+# Patch TRL with memory-efficient optimizations
+patch_trl()
+
+# Now you can use enhanced Transformers/TRL classes with memory-efficient methods
+from transformers import Trainer, TrainingArguments
+from trl import SFTTrainer
+
+# These trainers now have enhanced methods
+trainer = SFTTrainer(...)
+trainer.print_trainable_parameters()  # Added by patching
+trainer.prepare_model_for_kbit_training()  # Added by patching
+```
+
+### Kernel Optimizations for Fast Training
+
+```python
+from llm_trainer.kernels import (
+    FusedLinear, FusedRMSNorm, fused_cross_entropy,
+    gradient_checkpointing, LowVRAMLinear, empty_cache
+)
+
+# Use fused operations for better performance
+fused_linear = FusedLinear(in_features=512, out_features=512)
+fused_norm = FusedRMSNorm(dim=512)
+
+# Use gradient checkpointing to reduce memory usage
+def forward_pass_with_checkpointing(model, inputs):
+    return gradient_checkpointing(model, inputs)
+
+# Use low VRAM linear layers for memory-efficient training
+low_vram_linear = LowVRAMLinear(in_features=512, out_features=512)
+
+# Clear cache to free up memory
+empty_cache()
 ```
 
 ### Command Line
@@ -248,17 +317,22 @@ llm-trainer/
 │   │   ├── dataloader.py         # Data loading
 │   │   └── preprocessing.py      # Data preprocessing
 │   ├── training/                 # Training infrastructure
-│   │   ├── trainer.py            # Main training logic
-│   │   ├── optimizer.py          # Optimizers
+│   │   ├── trainer.py            # Enhanced trainer with TRL-style APIs
+│   │   ├── optimizer.py          # Standard optimizers
 │   │   └── scheduler.py          # Learning rate schedulers
+│   ├── kernels/                  # Kernel optimizations
+│   │   ├── fused_ops.py          # Fused operations
+│   │   └── memory_efficient.py   # Memory-efficient operations
+│   ├── patching/                 # Patching system
+│   │   ├── patch_transformers.py # Transformers patching
+│   │   └── patch_trl.py          # TRL patching
 │   ├── utils/                    # Utilities
 │   │   ├── generation.py         # Text generation
 │   │   ├── inference.py          # Inference utilities
 │   │   └── metrics.py            # Evaluation metrics
 │   └── config/                   # Configuration
 │       ├── model_config.py       # Model configuration
-│       ├── training_config.py    # Training configuration
-│       └── data_config.py        # Data configuration
+│       └── training_config.py    # Training configuration
 ├── scripts/                      # CLI tools
 │   ├── train.py                  # Training script
 │   ├── generate.py               # Text generation

@@ -5,6 +5,264 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.4] - 2025-08-29
+
+### Overview
+
+This release introduces **full TRL (Transformer Reinforcement Learning) integration** with familiar APIs for SFT, DPO, PPO, and Reward Modeling training. The update provides memory-efficient training techniques and complete compatibility with the HuggingFace ecosystem while maintaining backward compatibility with existing APIs.
+
+This release also introduces **patching system** with kernel optimizations for fast and memory-efficient training.
+
+---
+
+### Features
+
+- **TRL-Style Training APIs**
+    - Added `SFTTrainer`, `DPOTrainer`, `PPOTrainer`, and `RewardTrainer` classes with familiar `.train()` methods.
+    - Implemented TRL-style configuration classes: `SFTConfig`, `DPOConfig`, `PPOConfig`, and `RewardConfig`.
+    - Full compatibility with HuggingFace model architectures and training workflows.
+    - **Affected files:**  
+        - `src/llm_trainer/config/sft_config.py`
+        - `src/llm_trainer/config/dpo_config.py`
+        - `src/llm_trainer/config/ppo_config.py`
+        - `src/llm_trainer/config/reward_config.py`
+        - `src/llm_trainer/training/enhanced_trainer.py`
+
+- **Memory Optimizations**
+    - Added memory-efficient operations for low VRAM training.
+
+- **Kernel Optimizations for Fast Training**
+    - Added `kernels` module with fused operations for better performance.
+    - Implemented memory-efficient operations for low VRAM training.
+    - Added gradient checkpointing and cache management utilities.
+    - **Affected files:**  
+        - `src/llm_trainer/kernels/__init__.py`
+        - `src/llm_trainer/kernels/fused_ops.py`
+        - `src/llm_trainer/kernels/memory_efficient.py`
+
+- **Patching System for Transformers/TRL**
+    - Added `patching` module to enhance existing Transformers and TRL classes.
+    - Implemented monkey-patching for memory-efficient optimizations.
+    - Added methods to existing trainer classes.
+    - **Affected files:**  
+        - `src/llm_trainer/patching/__init__.py`
+        - `src/llm_trainer/patching/patch_transformers.py`
+        - `src/llm_trainer/patching/patch_trl.py`
+
+- **Enhanced Trainer Functionality**
+    - Extended `EnhancedTrainer` with TRL-style training methods.
+    - Added HuggingFace-style APIs: `.save_model()`, `.save_pretrained()`, `.from_pretrained()`.
+    - Implemented parameter efficiency reporting with `.print_trainable_parameters()`.
+    - **Affected files:**  
+        - `src/llm_trainer/training/enhanced_trainer.py`
+
+- **PEFT Integration**
+    - Full support for LoRA and other PEFT adapters.
+    - Automatic PEFT adapter application during trainer initialization.
+    - Integration with PEFT preparation functions.
+    - **Affected files:**  
+        - `src/llm_trainer/training/enhanced_trainer.py`
+
+---
+
+### Improvements
+
+- **API Compatibility**
+    - Complete backward compatibility with existing `Trainer` and `TrainingConfig`.
+    - Seamless integration with HuggingFace Transformers models and tokenizers.
+    - Familiar TRL-style parameter names and configurations.
+    - Support for all HuggingFace training arguments and configurations.
+
+- **Memory Efficiency**
+    - Memory-efficient optimizers reduce training memory footprint.
+    - Parameter-efficient training with LoRA adapters reduces trainable parameters by 99%+.
+    - Gradient checkpointing support for large model training.
+    - Low VRAM linear layers and attention mechanisms.
+
+- **Performance Optimizations**
+    - Fused operations in optimizers for faster training.
+    - Efficient parameter updates with reduced computational overhead.
+    - Optimized data loading and preprocessing pipelines.
+    - Kernel-level optimizations for common operations.
+
+- **Documentation**
+    - Added comprehensive documentation for TRL integration.
+    - Updated README with examples and usage instructions.
+    - Created detailed API reference and best practices guide.
+
+---
+
+### Technical Implementation
+
+- **TRL-Style Configuration Classes**
+    - `SFTConfig`, `DPOConfig`, `PPOConfig`, and `RewardConfig` follow TRL conventions.
+    - Support all familiar TRL parameters while maintaining compatibility with existing configs.
+    - Automatic mapping of TRL-style parameters to internal training configurations.
+
+- **Enhanced Trainer Architecture**
+    - `EnhancedTrainer` inherits from base `Trainer` with extended functionality.
+    - Support for multiple training paradigms through configuration-based training.
+    - HuggingFace-style APIs for model saving, loading, and hub integration.
+
+- **Kernel Optimizations**
+    - Fused linear layers and RMSNorm for better performance.
+    - Memory-efficient attention mechanisms.
+    - Gradient checkpointing utilities for low VRAM training.
+
+- **Patching System**
+    - Monkey-patching for Transformers and TRL classes.
+    - Adds methods to existing implementations.
+    - Maintains full compatibility with original APIs.
+
+- **PEFT Integration**
+    - Automatic PEFT adapter application during trainer initialization.
+    - Support for LoRA, AdaLoRA, and other PEFT methods.
+    - Preparation functions for k-bit training scenarios.
+
+---
+
+### Modified Core Files
+
+- **`src/llm_trainer/config/sft_config.py`**: New SFT configuration class following TRL conventions.
+- **`src/llm_trainer/config/dpo_config.py`**: New DPO configuration class following TRL conventions.
+- **`src/llm_trainer/config/ppo_config.py`**: New PPO configuration class following TRL conventions.
+- **`src/llm_trainer/config/reward_config.py`**: New Reward configuration class following TRL conventions.
+- **`src/llm_trainer/training/enhanced_trainer.py`**: Enhanced trainer with TRL-style APIs.
+- **`src/llm_trainer/kernels/__init__.py`**: Kernel optimizations module initialization.
+- **`src/llm_trainer/kernels/fused_ops.py`**: Fused operations for better performance.
+- **`src/llm_trainer/kernels/memory_efficient.py`**: Memory-efficient operations for low VRAM training.
+- **`src/llm_trainer/patching/__init__.py`**: Patching system module initialization.
+- **`src/llm_trainer/patching/patch_transformers.py`**: Transformers patching implementation.
+- **`src/llm_trainer/patching/patch_trl.py`**: TRL patching implementation.
+- **`src/llm_trainer/__init__.py`**: Updated exports to include new trainers and optimizers.
+- **`src/llm_trainer/config/__init__.py`**: Updated exports to include new configuration classes.
+- **`src/llm_trainer/training/__init__.py`**: Updated exports to include new trainers and optimizers.
+
+---
+
+### Usage Examples
+
+#### **TRL-Style SFT Training**
+```python
+from llm_trainer import SFTTrainer, SFTConfig
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+# Load model and tokenizer
+model = AutoModelForCausalLM.from_pretrained("gpt2")
+tokenizer = AutoTokenizer.from_pretrained("gpt2")
+
+# Configure SFT training
+sft_config = SFTConfig(
+    per_device_train_batch_size=4,
+    gradient_accumulation_steps=2,
+    learning_rate=2e-5,
+    num_train_epochs=3,
+    max_seq_length=1024,
+    packing=True,
+    logging_steps=10
+)
+
+# Create trainer and train
+trainer = SFTTrainer(
+    model=model,
+    tokenizer=tokenizer,
+    config=sft_config
+)
+trainer.train()
+```
+
+#### **DPO Training with TRL-Style API**
+```python
+from llm_trainer import DPOTrainer, DPOConfig
+
+# Configure DPO training
+dpo_config = DPOConfig(
+    beta=0.1,
+    loss_type="sigmoid",
+    per_device_train_batch_size=4,
+    learning_rate=5e-6
+)
+
+# Create trainer and train
+trainer = DPOTrainer(
+    model=model,
+    tokenizer=tokenizer,
+    config=dpo_config
+)
+trainer.train()
+```
+
+#### **Memory-Efficient Optimizers**
+```python
+from llm_trainer.training import create_optimizer
+
+# Create memory-efficient optimizer
+optimizer = create_optimizer(
+    model,
+    optimizer_name="adamw",
+    learning_rate=5e-5,
+    weight_decay=0.01
+)
+```
+
+#### **Patching**
+```python
+from llm_trainer import patch_transformers, patch_trl
+
+# Patch existing libraries with memory-efficient optimizations
+patch_transformers()
+patch_trl()
+
+# Now existing Transformers/TRL classes have enhanced methods
+from transformers import Trainer
+trainer = Trainer(...)
+trainer.print_trainable_parameters()  # Added by patching
+```
+
+#### **Kernel Optimizations**
+```python
+from llm_trainer.kernels import (
+    FusedLinear, FusedRMSNorm, gradient_checkpointing, empty_cache
+)
+
+# Use fused operations for better performance
+fused_linear = FusedLinear(in_features=512, out_features=512)
+fused_norm = FusedRMSNorm(dim=512)
+
+# Use gradient checkpointing to reduce memory usage
+def forward_pass_with_checkpointing(model, inputs):
+    return gradient_checkpointing(model, inputs)
+
+# Clear cache to free up memory
+empty_cache()
+```
+
+#### **PEFT Integration**
+```python
+from llm_trainer import SFTTrainer
+from peft import LoraConfig, TaskType
+
+# Configure LoRA
+lora_config = LoraConfig(
+    r=8,
+    lora_alpha=16,
+    lora_dropout=0.05,
+    task_type=TaskType.CAUSAL_LM
+)
+
+# Create trainer with PEFT
+trainer = SFTTrainer(
+    model=model,
+    tokenizer=tokenizer,
+    peft_config=lora_config
+)
+
+# Show parameter efficiency
+trainer.print_trainable_parameters()
+```
+
+---
+
 ## [0.2.3] - 2025-08-28
 
 ### Overview

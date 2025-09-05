@@ -1,4 +1,4 @@
-"""Main trainer class for LLM training."""
+"""Main trainer class for LLM training with TRL enhancements."""
 
 import os
 import time
@@ -6,7 +6,7 @@ import logging
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from typing import Optional, Dict, Any, List, Union
+from typing import Optional, Dict, Any, List, Union, Callable
 from tqdm import tqdm
 import math
 
@@ -23,7 +23,7 @@ from .utils import (
 
 
 class Trainer:
-    """Main trainer class for language model training."""
+    """Enhanced trainer class with TRL-style API and memory optimizations."""
 
     def __init__(self,
                  model: TransformerLM,
@@ -32,7 +32,8 @@ class Trainer:
                  train_dataset: Optional[LanguageModelingDataset] = None,
                  eval_dataset: Optional[LanguageModelingDataset] = None,
                  data_config: Optional[DataConfig] = None,
-                 formatting_func: Optional[Any] = None):
+                 formatting_func: Optional[Callable] = None,
+                 peft_config: Optional[Any] = None):
         """
         Args:
             model: The model to train.
@@ -42,6 +43,7 @@ class Trainer:
             eval_dataset: Optional evaluation dataset.
             data_config: Optional data configuration.
             formatting_func: Optional formatting function for dataset samples (like SFTTrainer).
+            peft_config: Optional PEFT configuration for parameter-efficient training.
         """
         self.model = model
         self.tokenizer = tokenizer
@@ -112,22 +114,30 @@ class Trainer:
         # Setup datasets and dataloaders
         # Optionally apply PEFT adapters (LoRA) if requested
         self.peft_applied = False
-        if getattr(self.config, 'use_peft', False):
+        if getattr(self.config, 'use_peft', False) or peft_config is not None:
             try:
-                from peft import LoraConfig, TaskType, get_peft_model  # type: ignore
-                task_type = getattr(self.config, 'peft_task_type', 'CAUSAL_LM')
-                task_enum = getattr(TaskType, task_type, TaskType.CAUSAL_LM)
-                lora_config = LoraConfig(
-                    r=getattr(self.config, 'peft_r', 8),
-                    lora_alpha=getattr(self.config, 'peft_alpha', 16),
-                    lora_dropout=getattr(self.config, 'peft_dropout', 0.05),
-                    bias=getattr(self.config, 'peft_bias', 'none'),
-                    task_type=task_enum,
-                    target_modules=getattr(self.config, 'peft_target_modules', None)
-                )
-                self.model = get_peft_model(self.model, lora_config)
-                self.peft_applied = True
-                self.logger.info("PEFT adapters applied (LoRA)")
+                from peft import get_peft_model  # type: ignore
+                # Use provided peft_config or fall back to config settings
+                if peft_config is not None:
+                    self.model = get_peft_model(self.model, peft_config)
+                    self.peft_applied = True
+                    self.logger.info("PEFT adapters applied with provided config")
+                elif getattr(self.config, 'use_peft', False):
+                    # Apply PEFT from training config
+                    from peft import LoraConfig, TaskType # type: ignore
+                    task_type = getattr(self.config, 'peft_task_type', 'CAUSAL_LM')
+                    task_enum = getattr(TaskType, task_type, TaskType.CAUSAL_LM)
+                    lora_config = LoraConfig(
+                        r=getattr(self.config, 'peft_r', 8),
+                        lora_alpha=getattr(self.config, 'peft_alpha', 16),
+                        lora_dropout=getattr(self.config, 'peft_dropout', 0.05),
+                        bias=getattr(self.config, 'peft_bias', 'none'),
+                        task_type=task_enum,
+                        target_modules=getattr(self.config, 'peft_target_modules', None)
+                    )
+                    self.model = get_peft_model(self.model, lora_config)
+                    self.peft_applied = True
+                    self.logger.info("PEFT adapters applied (LoRA)")
             except ImportError:
                 self.logger.warning("peft not installed; skipping PEFT integration.")
             except Exception as e:
@@ -285,8 +295,32 @@ class Trainer:
             except ImportError:
                 self.logger.warning("Weights & Biases not available")
 
-    def train(self) -> None:
-        """Main training loop."""
+    def train(self, config: Optional[TrainingConfig] = None) -> None:
+        """
+        Main training loop with TRL-style API.
+        
+        Args:
+            config: Optional training configuration to override the default one
+        """
+        # If a specific config is provided, use it instead of the default one
+        if config is not None:
+            # Store the original config temporarily
+            original_config = self.config
+            self.config = config
+            
+            # Recalculate total steps if needed
+            if self.train_dataloader is not None:
+                self.total_steps = self._calculate_total_steps()
+                
+                # Recreate scheduler with new config
+                self.scheduler = create_scheduler(
+                    optimizer=self.optimizer,
+                    scheduler_name=config.lr_scheduler,
+                    num_training_steps=self.total_steps,
+                    warmup_steps=config.warmup_steps,
+                    min_lr_ratio=config.min_lr_ratio
+                )
+
         if self.train_dataloader is None:
             raise ValueError("No training dataloader available. Please provide train_dataset.")
 
@@ -347,6 +381,46 @@ class Trainer:
 
         # Cleanup
         self._cleanup()
+
+        # Restore original config if it was overridden
+        if config is not None:
+            self.config = original_config
+
+    def sft_train(self, config: Optional[TrainingConfig] = None) -> None:
+        """
+        Supervised Fine-Tuning training (TRL-style API).
+        
+        Args:
+            config: Optional training configuration
+        """
+        self.train(config)
+
+    def dpo_train(self, config: Optional[TrainingConfig] = None) -> None:
+        """
+        Direct Preference Optimization training (TRL-style API).
+        
+        Args:
+            config: Optional training configuration
+        """
+        self.train(config)
+
+    def ppo_train(self, config: Optional[TrainingConfig] = None) -> None:
+        """
+        Proximal Policy Optimization training (TRL-style API).
+        
+        Args:
+            config: Optional training configuration
+        """
+        self.train(config)
+
+    def reward_modeling_train(self, config: Optional[TrainingConfig] = None) -> None:
+        """
+        Reward modeling training (TRL-style API).
+        
+        Args:
+            config: Optional training configuration
+        """
+        self.train(config)
 
     def _train_epoch(self) -> float:
         """Train for one epoch."""
@@ -849,7 +923,7 @@ class Trainer:
         return perplexity
 
     def save_model(self, save_path: str) -> None:
-        """Save the trained model."""
+        """Save the trained model (HuggingFace-style API)."""
         # Get model for saving (unwrap DDP if needed)
         model_to_save = self.model
         if hasattr(self.model, 'module'):
@@ -859,6 +933,23 @@ class Trainer:
         self.tokenizer.save_pretrained(save_path)
 
         self.logger.info(f"Model saved to {save_path}")
+
+    def save_pretrained(self, save_directory: str) -> None:
+        """Save the trained model and tokenizer (HuggingFace-style API)."""
+        self.save_model(save_directory)
+
+    def push_to_hub(self, repo_id: str, **kwargs) -> None:
+        """Push model to Hugging Face Hub (HuggingFace-style API)."""
+        # Get model for saving (unwrap DDP if needed)
+        model_to_save = self.model
+        if hasattr(self.model, 'module'):
+            model_to_save = self.model.module
+            
+        # Push model to hub
+        model_to_save.push_to_hub(repo_id, **kwargs)
+        self.tokenizer.push_to_hub(repo_id, **kwargs)
+        
+        self.logger.info(f"Model pushed to Hugging Face Hub: {repo_id}")
 
     @classmethod
     def from_pretrained(cls,
@@ -877,3 +968,37 @@ class Trainer:
         trainer = cls(model=model, tokenizer=tokenizer, config=config)
 
         return trainer
+
+    def get_nb_trainable_parameters(self) -> tuple:
+        """
+        Get number of trainable parameters.
+        
+        Returns:
+            Tuple of (all_params, trainable_params)
+        """
+        all_param = 0
+        trainable_param = 0
+        for _, param in self.model.named_parameters():
+            all_param += param.numel()
+            if param.requires_grad:
+                trainable_param += param.numel()
+        return all_param, trainable_param
+    
+    def print_trainable_parameters(self) -> None:
+        """Print trainable parameters information."""
+        all_param, trainable_param = self.get_nb_trainable_parameters()
+        trainable_ratio = 100 * trainable_param / all_param if all_param > 0 else 0
+        self.logger.info(
+            f"Trainable parameters: {trainable_param:,}/{all_param:,} ({trainable_ratio:.2f}%)"
+        )
+
+    def prepare_model_for_kbit_training(self) -> None:
+        """Prepare model for k-bit training."""
+        try:
+            from peft import prepare_model_for_kbit_training # type: ignore
+            self.model = prepare_model_for_kbit_training(self.model)
+            self.logger.info("Model prepared for k-bit training")
+        except ImportError:
+            self.logger.warning("PEFT not installed; skipping k-bit training preparation")
+        except Exception as e:
+            self.logger.warning(f"Failed to prepare model for k-bit training: {e}")

@@ -1,4 +1,4 @@
-"""Training configuration for LLM training."""
+"""Training configuration for LLM training with TRL-style parameters."""
 
 from dataclasses import dataclass
 from typing import Optional, List, Dict, Any
@@ -9,7 +9,7 @@ import torch
 
 @dataclass
 class TrainingConfig:
-    """Configuration for training process."""
+    """Enhanced configuration for training process with TRL-style parameters."""
 
     # Training hyperparameters
     batch_size: int = 32
@@ -82,7 +82,6 @@ class TrainingConfig:
     peft_bias: str = "none"  # none, all, lora_only
     peft_task_type: str = "CAUSAL_LM"
 
-
     # Device configuration
     device: str = "auto"  # auto, cpu, cuda, mps
     force_cpu: bool = False
@@ -98,10 +97,32 @@ class TrainingConfig:
     compile_model: bool = False
     compile_mode: str = "default"  # default, reduce-overhead, max-autotune
 
+    # TRL-style parameters (for compatibility)
+    per_device_train_batch_size: Optional[int] = None
+    per_device_eval_batch_size: Optional[int] = None
+    num_train_epochs: Optional[int] = None
+    learning_rate_type: Optional[str] = None  # lr_scheduler_type in TRL
+    evaluation_strategy: Optional[str] = None  # eval_strategy in our implementation
+    save_strategy: Optional[str] = None
+    logging_strategy: Optional[str] = None
+    optim: Optional[str] = None  # optimizer in our implementation
+
     def __post_init__(self):
         """Validate and set default values."""
         if self.report_to is None:
             self.report_to = ["tensorboard"]
+
+        # Map TRL-style parameters to our parameters
+        if self.per_device_train_batch_size is not None:
+            self.batch_size = self.per_device_train_batch_size
+        if self.num_train_epochs is not None:
+            self.num_epochs = self.num_train_epochs
+        if self.learning_rate_type is not None:
+            self.lr_scheduler = self.learning_rate_type
+        if self.evaluation_strategy is not None:
+            self.eval_strategy = self.evaluation_strategy
+        if self.optim is not None:
+            self.optimizer = self.optim
 
         # Validation
         assert self.batch_size > 0, "batch_size must be positive"

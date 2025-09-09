@@ -10,10 +10,10 @@ This package provides:
 - Inference and generation capabilities
 """
 
-__version__ = "0.2.4"
-__author__ = "OEvortex"
-__email__ = "helpingai5@gmail.com"
-__authors__ = [{"name": "OEvortex", "email": "helpingai5@gmail.com"}]
+__version__ = "0.2.5"
+__author__ = "Abhay"
+__email__ = "abhay@helpingai.co"
+__authors__ = [{"name": "Abhay", "email": "abhay@helpingai.co"}]
 
 from .models import TransformerLM
 from .tokenizer import BPETokenizer

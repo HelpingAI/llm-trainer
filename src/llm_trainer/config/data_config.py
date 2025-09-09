@@ -12,7 +12,7 @@ class DataConfig:
     
     # Dataset configuration
     dataset_name: str = "wikitext"
-    dataset_config: str = "wikitext-103-raw-v1"
+    dataset_config: Optional[str] = None
     dataset_split: str = "train"
     validation_split: Optional[str] = "validation"
     test_split: Optional[str] = "test"

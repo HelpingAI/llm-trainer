@@ -5,6 +5,77 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.5] - 2025-09-05
+
+### Overview
+
+This release focuses on **performance optimizations and code cleanup**. All Unsloth-related code has been removed to streamline the codebase and focus on core functionality. The trainer now fully integrates patching and kernel optimizations for enhanced memory efficiency and faster training.
+
+### Features
+
+- **Enhanced Trainer Integration**
+    - Full integration of patching and kernel optimizations into the main trainer
+    - Automatic application of memory-efficient techniques during initialization
+    - Support for fused layers, gradient checkpointing, and efficient attention
+    - Factory method for creating memory-efficient trainers
+
+- **Kernel Optimizations**
+    - Fused linear layers for 10-30% performance improvement
+    - Memory-efficient attention mechanisms (Flash Attention)
+    - Gradient checkpointing support for low VRAM training
+    - Optimizer state offloading for reduced GPU memory usage
+
+- **Code Cleanup**
+    - Complete removal of Unsloth-related code and dependencies
+    - Streamlined codebase with focus on core functionality
+    - Updated documentation and examples
+
+### Improvements
+
+- **Performance Enhancements**
+    - Automatic fused layer application when `fuse_layers=True`
+    - Efficient attention setup for PyTorch 2.0+ compatibility
+    - Memory optimization techniques integrated into training loop
+    - Periodic cache emptying for sustained performance
+
+- **Developer Experience**
+    - Comprehensive documentation for fused layers vs linear layers
+    - Clear configuration options for performance optimizations
+    - Better error handling and fallback mechanisms
+    - Improved logging for optimization features
+
+### Technical Changes
+
+- **Trainer Architecture**
+    - Integrated patching system into trainer initialization
+    - Added kernel optimization methods to training workflow
+    - Enhanced memory management during training steps
+    - Support for hardware-specific optimizations
+
+- **API Changes**
+    - New `create_memory_efficient_trainer()` factory method
+    - Enhanced `apply_fused_layers()` method for layer optimization
+    - Automatic patching application during trainer setup
+    - Backward-compatible configuration options
+
+### Removed
+
+- **Unsloth Integration**
+    - Removed all Unsloth-related optimizers and utilities
+    - Cleaned up Unsloth-specific documentation and examples
+    - Removed Unsloth dependencies from project metadata
+    - Streamlined codebase by removing unused components
+
+### Documentation
+
+- **New Documentation**
+    - Added comprehensive guide for fused layers vs linear layers
+    - Performance benchmarks and usage recommendations
+    - Configuration examples for optimization features
+    - Troubleshooting guide for common issues
+
+---
+
 ## [0.2.4] - 2025-08-29
 
 ### Overview

@@ -21,6 +21,15 @@ from .utils import (
     calculate_eta, format_time
 )
 
+# Import patching and kernel optimizations
+from ..patching import patch_transformers, patch_trl
+from ..kernels import *
+from ..kernels.fused_ops import FusedLinear, FusedRMSNorm, fused_cross_entropy
+from ..kernels.memory_efficient import (
+    gradient_checkpointing, LowVRAMLinear, 
+    offload_optimizer_states, empty_cache, efficient_attention_forward
+)
+
 
 class Trainer:
     """Enhanced trainer class with TRL-style API and memory optimizations."""
@@ -177,7 +186,26 @@ class Trainer:
         # Log model information
         log_model_info(self.model, self.logger)
 
+        # Apply patching for enhanced functionality
+        self._apply_patching()
+
+        # Apply fused layers if requested
+        self.apply_fused_layers()
+
+        # Setup efficient attention if available
+        self._setup_efficient_attention()
+
         self.logger.info(f"Trainer initialized with {self.total_steps} total training steps")
+
+    def _apply_patching(self):
+        """Apply patching for enhanced functionality."""
+        try:
+            # Patch Transformers and TRL for enhanced functionality
+            patch_transformers()
+            patch_trl()
+            self.logger.info("Successfully applied patching for enhanced functionality")
+        except Exception as e:
+            self.logger.warning(f"Failed to apply patching: {e}")
 
     def _setup_distributed(self):
         """Setup distributed training."""
@@ -494,8 +522,15 @@ class Trainer:
         return epoch_loss / num_batches if num_batches > 0 else 0.0
 
     def _training_step(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
-        """Perform a single training step."""
-        if getattr(self.config, 'use_accelerate', False) and self.accelerator is not None:
+        """Perform a single training step with kernel optimizations."""
+        # Apply gradient checkpointing if enabled
+        if getattr(self.config, 'use_gradient_checkpointing', False):
+            def model_forward(*args, **kwargs):
+                return self.model(*args, **kwargs)
+            
+            outputs = gradient_checkpointing(model_forward, **batch)
+            loss = outputs["loss"]
+        elif getattr(self.config, 'use_accelerate', False) and self.accelerator is not None:
             outputs = self.model(**batch)
             loss = outputs["loss"]
         elif self.use_amp and self.device.type == "cuda":
@@ -505,6 +540,19 @@ class Trainer:
         else:
             outputs = self.model(**batch)
             loss = outputs["loss"]
+
+        # Use fused cross-entropy if available and beneficial
+        if hasattr(outputs, 'logits') and hasattr(batch, 'labels'):
+            try:
+                # Use fused cross-entropy for better performance
+                loss = fused_cross_entropy(
+                    outputs.logits, 
+                    batch['labels'], 
+                    ignore_index=self.tokenizer.pad_token_id
+                )
+            except Exception:
+                # Fallback to original loss
+                pass
 
         # Scale loss for gradient accumulation
         loss = loss / self.config.gradient_accumulation_steps
@@ -519,7 +567,7 @@ class Trainer:
             loss.backward()
 
     def _optimizer_step(self) -> None:
-        """Perform optimizer step with gradient clipping."""
+        """Perform optimizer step with gradient clipping and memory optimizations."""
         if self.use_amp and self.device.type == "cuda":
             # Unscale gradients for clipping
             self.scaler.unscale_(self.optimizer)
@@ -537,8 +585,21 @@ class Trainer:
             # Optimizer step
             self.optimizer.step()
 
-        # Zero gradients
+        # Zero gradients with memory efficiency
         self.optimizer.zero_grad(set_to_none=True)
+
+        # Apply memory-efficient techniques if enabled
+        if getattr(self.config, 'use_low_vram', False):
+            # Offload optimizer states to CPU to save GPU memory
+            try:
+                offload_optimizer_states(self.optimizer, device='cpu')
+            except Exception:
+                pass  # Silently fail if offloading not supported
+
+        # Empty cache periodically to free up memory
+        if getattr(self.config, 'empty_cache_steps', 0) > 0:
+            if self.current_step % self.config.empty_cache_steps == 0:
+                empty_cache()
 
     def _evaluate(self) -> float:
         """Evaluate the model."""
@@ -1002,3 +1063,62 @@ class Trainer:
             self.logger.warning("PEFT not installed; skipping k-bit training preparation")
         except Exception as e:
             self.logger.warning(f"Failed to prepare model for k-bit training: {e}")
+
+    def apply_fused_layers(self) -> None:
+        """Apply fused layers for better performance."""
+        try:
+            # Replace linear layers with fused versions if requested
+            if getattr(self.config, 'fuse_layers', False):
+                self._replace_linear_with_fused(self.model)
+                self.logger.info("Applied fused layers for better performance")
+        except Exception as e:
+            self.logger.warning(f"Failed to apply fused layers: {e}")
+
+    def _replace_linear_with_fused(self, module: nn.Module) -> None:
+        """Recursively replace linear layers with fused versions."""
+        for name, child in module.named_children():
+            if isinstance(child, nn.Linear):
+                # Replace with fused linear
+                fused_layer = FusedLinear(
+                    child.in_features, 
+                    child.out_features, 
+                    child.bias is not None
+                )
+                # Copy weights and bias
+                fused_layer.weight.data.copy_(child.weight.data)
+                if child.bias is not None:
+                    fused_layer.bias.data.copy_(child.bias.data)
+                
+                setattr(module, name, fused_layer)
+            else:
+                # Recursively apply to child modules
+                self._replace_linear_with_fused(child)
+
+    def _setup_efficient_attention(self) -> None:
+        """Setup efficient attention mechanisms."""
+        try:
+            # Enable efficient attention if PyTorch 2.0+ is available
+            if hasattr(torch.nn.functional, 'scaled_dot_product_attention'):
+                torch.backends.cuda.enable_flash_sdp(True)
+                torch.backends.cuda.enable_math_sdp(False)
+                torch.backends.cuda.enable_mem_efficient_sdp(False)
+                self.logger.info("Enabled efficient attention (Flash Attention)")
+        except Exception as e:
+            self.logger.warning(f"Failed to setup efficient attention: {e}")
+
+    @classmethod
+    def create_memory_efficient_trainer(
+        cls,
+        model: nn.Module,
+        tokenizer,
+        config: TrainingConfig,
+        **kwargs
+    ) -> 'Trainer':
+        """Create a memory-efficient trainer with optimizations applied."""
+        # Set memory-efficient defaults
+        config.use_gradient_checkpointing = getattr(config, 'use_gradient_checkpointing', True)
+        config.use_low_vram = getattr(config, 'use_low_vram', True)
+        config.fuse_layers = getattr(config, 'fuse_layers', True)
+        
+        trainer = cls(model, tokenizer, config, **kwargs)
+        return trainer

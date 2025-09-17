@@ -1,0 +1,65 @@
+# Unsloth/Axolotl-inspired finetuning config example
+# Minimal settings to finetune a Llama/Qwen/Gemma-like model with QLoRA
+
+output_dir: ./output/finetune_llama_demo
+log_level: INFO
+
+model:
+  model_name_or_path: meta-llama/Llama-3.2-1B
+  # Quantization: 4 or 8; set 0 to disable
+  quantization_bits: 4
+  torch_dtype: bfloat16
+  device_map: auto
+  use_gradient_checkpointing: true
+  bnb:
+    quant_type: nf4       # nf4 or fp4
+    compute_dtype: bfloat16
+    double_quant: true
+  lora:
+    r: 8
+    alpha: 16
+    dropout: 0.05
+    bias: none
+    target_modules: auto  # or explicit list
+
+# Dataset via Hugging Face datasets hub
+# For chats, dataset rows should have `messages` or `conversations` fields
+# with [{role, content}, ...]
+data:
+  dataset_name: tatsu-lab/alpaca  # example dataset
+  dataset_config: null
+  split: train
+  validation_split: null
+  text_column: text
+  max_length: 1024
+  min_length: 1
+  filter_empty: true
+  remove_duplicates: false
+  pack_sequences: false
+  packing_strategy: greedy
+  format: alpaca   # chat | alpaca | instruction | null
+
+training:
+  batch_size: 4
+  gradient_accumulation_steps: 4
+  learning_rate: 2.0e-4
+  weight_decay: 0.01
+  num_epochs: 1
+  lr_scheduler: cosine
+  warmup_steps: 50
+  min_lr_ratio: 0.1
+  optimizer: adamw
+  use_amp: true
+  amp_dtype: float16
+  save_steps: 200
+  save_total_limit: 3
+  checkpoint_dir: ./checkpoints/finetune_llama_demo
+  eval_steps: 0
+  eval_strategy: no
+  logging_steps: 10
+  report_to: [tensorboard]
+  device: auto
+  seed: 42
+  use_accelerate: false
+  use_peft: true
+

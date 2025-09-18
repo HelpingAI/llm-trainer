@@ -136,28 +136,17 @@ class DPOTrainer(BaseFineTuneTrainer):
         self._setup_reference_model()
     
     def _setup_reference_model(self):
-        """Setup the reference model for DPO."""
+        """Setup the reference model for DPO (silent)."""
         if self.ref_model is None and self.model is not None:
-            # Create a copy of the model as reference
-            print("Creating reference model from main model...")
             try:
-                # Try to create a copy
                 import copy
                 self.ref_model = copy.deepcopy(self.model)
-                
-                # Freeze reference model
                 for param in self.ref_model.parameters():
                     param.requires_grad = False
-                
-                # Move to same device as main model
-                if hasattr(self.model, 'device'):
+                if hasattr(self.model, "device"):
                     self.ref_model = self.ref_model.to(self.model.device)
-                
-                print("✅ Reference model created and frozen")
-                
-            except Exception as e:
-                print(f"⚠️  Could not create reference model: {e}")
-                print("   DPO will use the main model as reference (not recommended)")
+            except Exception:
+                # Fallback: use the main model as reference
                 self.ref_model = self.model
     
     def _process_dpo_dataset(self, dataset: Dataset) -> Dataset:
@@ -371,30 +360,8 @@ class DPOTrainer(BaseFineTuneTrainer):
         }
     
     def preview_preferences(self, num_examples: int = 3) -> None:
-        """
-        Preview preference examples from the dataset.
-        
-        Args:
-            num_examples: Number of examples to show
-        """
-        if not self.train_dataset:
-            print("No training dataset available")
-            return
-        
-        print("\n=== DPO Preference Examples ===")
-        
-        for i in range(min(num_examples, len(self.train_dataset))):
-            example = self.train_dataset[i]
-            print(f"\nExample {i + 1}:")
-            
-            if "chosen_input_ids" in example and self.tokenizer:
-                chosen_text = self.tokenizer.decode(example["chosen_input_ids"], skip_special_tokens=True)
-                rejected_text = self.tokenizer.decode(example["rejected_input_ids"], skip_special_tokens=True)
-                
-                print(f"Chosen: {chosen_text[:150]}{'...' if len(chosen_text) > 150 else ''}")
-                print(f"Rejected: {rejected_text[:150]}{'...' if len(rejected_text) > 150 else ''}")
-                print(f"Chosen length: {len(example['chosen_input_ids'])} tokens")
-                print(f"Rejected length: {len(example['rejected_input_ids'])} tokens")
+        """No-op preview to keep API compatibility (prints removed)."""
+        return None
     
     def __repr__(self) -> str:
         """String representation of the DPO trainer."""

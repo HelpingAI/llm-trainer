@@ -13,7 +13,7 @@ from pathlib import Path
 
 try:
     from transformers import (
-        AutoModelForCausalLM, 
+        AutoModelForCausalLM,
         AutoTokenizer,
         BitsAndBytesConfig,
         PreTrainedModel,
@@ -22,6 +22,12 @@ try:
     _TRANSFORMERS_AVAILABLE = True
 except ImportError:
     _TRANSFORMERS_AVAILABLE = False
+    # Create dummy classes for type hints
+    class PreTrainedModel: pass
+    class PreTrainedTokenizer: pass
+    class AutoModelForCausalLM: pass
+    class AutoTokenizer: pass
+    class BitsAndBytesConfig: pass
     warnings.warn("Transformers not available. FastLanguageModel functionality will be limited.")
 
 try:
@@ -34,6 +40,11 @@ try:
     _PEFT_AVAILABLE = True
 except ImportError:
     _PEFT_AVAILABLE = False
+    # Create dummy classes for type hints
+    class LoraConfig: pass
+    class PeftModel: pass
+    def get_peft_model(model, config): return model
+    def prepare_model_for_kbit_training(model): return model
     warnings.warn("PEFT not available. LoRA functionality will be disabled.")
 
 from ..kernels.memory_efficient import gradient_checkpointing, empty_cache

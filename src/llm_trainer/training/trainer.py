@@ -9,6 +9,7 @@ from torch.utils.data import DataLoader
 from typing import Optional, Dict, Any, List, Union, Callable
 from tqdm import tqdm
 import math
+from contextlib import nullcontext
 
 from ..config import ModelConfig, TrainingConfig, DataConfig
 from ..models import TransformerLM
@@ -117,8 +118,17 @@ class Trainer:
         self.use_amp = self.config.should_use_amp()
         self.scaler = None
         if self.use_amp and not getattr(self.config, 'use_accelerate', False):
-            # Use new torch.amp API
-            self.scaler = torch.amp.GradScaler('cuda')
+            if self.device.type != "cuda":
+                self.logger.warning(
+                    "AMP requested but unsupported on device '%s'; disabling AMP.",
+                    self.device.type
+                )
+                self.use_amp = False
+            elif torch.cuda.is_available():
+                self.scaler = torch.amp.GradScaler(device_type="cuda")
+            else:
+                self.logger.warning("CUDA unavailable; disabling AMP.")
+                self.use_amp = False
 
         # Setup datasets and dataloaders
         # Optionally apply PEFT adapters (LoRA) if requested
@@ -284,15 +294,23 @@ class Trainer:
         if self.train_dataloader is None:
             # Estimate based on dataset size if available
             if self.train_dataset is not None:
-                steps_per_epoch = len(self.train_dataset) // (
-                    self.config.batch_size * self.config.gradient_accumulation_steps * self.config.world_size
+                denominator = max(
+                    1,
+                    self.config.batch_size * self.config.gradient_accumulation_steps * max(1, self.config.world_size)
                 )
-                return steps_per_epoch * self.config.num_epochs
+                steps_per_epoch = math.ceil(len(self.train_dataset) / denominator)
+                return max(1, steps_per_epoch) * self.config.num_epochs
             else:
                 return 1000  # Default fallback
 
-        steps_per_epoch = len(self.train_dataloader) // self.config.gradient_accumulation_steps
-        return steps_per_epoch * self.config.num_epochs
+        try:
+            dataloader_len = len(self.train_dataloader)
+        except TypeError:
+            # Some iterable dataloaders (e.g., streaming) do not support len()
+            return self.config.max_steps or 1000
+
+        steps_per_epoch = math.ceil(dataloader_len / self.config.gradient_accumulation_steps)
+        return max(1, steps_per_epoch) * self.config.num_epochs
 
     def _setup_monitoring(self):
         """Setup monitoring and logging."""
@@ -529,25 +547,41 @@ class Trainer:
                 return self.model(*args, **kwargs)
             
             outputs = gradient_checkpointing(model_forward, **batch)
-            loss = outputs["loss"]
-        elif getattr(self.config, 'use_accelerate', False) and self.accelerator is not None:
-            outputs = self.model(**batch)
-            loss = outputs["loss"]
-        elif self.use_amp and self.device.type == "cuda":
-            with torch.amp.autocast('cuda'):
-                outputs = self.model(**batch)
-                loss = outputs["loss"]
         else:
-            outputs = self.model(**batch)
+            autocast_context = nullcontext()
+            if self.use_amp and self.device.type == "cuda":
+                autocast_context = torch.amp.autocast(device_type="cuda")
+
+            with autocast_context:
+                outputs = self.model(**batch)
+
+        if isinstance(outputs, dict):
             loss = outputs["loss"]
+        else:
+            loss = getattr(outputs, "loss", None)
+            if loss is None and isinstance(outputs, (list, tuple)) and len(outputs) > 0:
+                loss = outputs[0]
+            if loss is None:
+                raise RuntimeError("Model forward pass did not return a loss tensor.")
 
         # Use fused cross-entropy if available and beneficial
-        if hasattr(outputs, 'logits') and hasattr(batch, 'labels'):
+        logits = None
+        if isinstance(outputs, dict):
+            logits = outputs.get("logits")
+        else:
+            logits = getattr(outputs, "logits", None)
+
+        labels = batch.get('labels') if isinstance(batch, dict) else None
+
+        if logits is None and isinstance(outputs, (list, tuple)) and len(outputs) > 1:
+            logits = outputs[1]
+
+        if logits is not None and labels is not None:
             try:
                 # Use fused cross-entropy for better performance
                 loss = fused_cross_entropy(
-                    outputs.logits, 
-                    batch['labels'], 
+                    logits,
+                    labels,
                     ignore_index=self.tokenizer.pad_token_id
                 )
             except Exception:
@@ -561,14 +595,26 @@ class Trainer:
 
     def _backward_step(self, loss: torch.Tensor) -> None:
         """Perform backward pass."""
-        if self.use_amp and self.device.type == "cuda":
+        if getattr(self.config, 'use_accelerate', False) and self.accelerator is not None:
+            self.accelerator.backward(loss)
+        elif self.use_amp and self.device.type == "cuda":
             self.scaler.scale(loss).backward()
         else:
             loss.backward()
 
     def _optimizer_step(self) -> None:
         """Perform optimizer step with gradient clipping and memory optimizations."""
-        if self.use_amp and self.device.type == "cuda":
+        if getattr(self.config, 'use_accelerate', False) and self.accelerator is not None:
+            if (
+                self.config.max_grad_norm
+                and self.config.max_grad_norm > 0
+                and hasattr(self.accelerator, 'clip_grad_norm_')
+            ):
+                self.accelerator.clip_grad_norm_(self.model.parameters(), self.config.max_grad_norm)
+            elif self.config.max_grad_norm and self.config.max_grad_norm > 0:
+                _ = self.gradient_clipper.clip_gradients(self.model)
+            self.optimizer.step()
+        elif self.use_amp and self.device.type == "cuda" and self.scaler is not None:
             # Unscale gradients for clipping
             self.scaler.unscale_(self.optimizer)
 
@@ -617,13 +663,21 @@ class Trainer:
                         for k, v in batch.items()}
 
                 # Forward pass
+                autocast_context = nullcontext()
                 if self.use_amp and self.device.type == "cuda":
-                    with torch.amp.autocast('cuda'):
-                        outputs = self.model(**batch)
-                        loss = outputs["loss"]
-                else:
+                    autocast_context = torch.amp.autocast(device_type="cuda")
+
+                with autocast_context:
                     outputs = self.model(**batch)
+
+                if isinstance(outputs, dict):
                     loss = outputs["loss"]
+                else:
+                    loss = getattr(outputs, "loss", None)
+                    if loss is None and isinstance(outputs, (list, tuple)) and len(outputs) > 0:
+                        loss = outputs[0]
+                    if loss is None:
+                        raise RuntimeError("Model forward pass did not return a loss tensor during evaluation.")
 
                 total_loss += loss.item()
                 num_batches += 1
@@ -641,14 +695,22 @@ class Trainer:
         if self.config.eval_strategy == "no":
             return False
         elif self.config.eval_strategy == "steps":
-            return self.current_step % self.config.eval_steps == 0
+            return (
+                self.current_step > 0
+                and self.config.eval_steps > 0
+                and self.current_step % self.config.eval_steps == 0
+            )
         elif self.config.eval_strategy == "epoch":
             return True  # Evaluate at end of each epoch
         return False
 
     def _should_save_checkpoint(self) -> bool:
         """Check if checkpoint should be saved."""
-        return self.current_step % self.config.save_steps == 0
+        return (
+            self.current_step > 0
+            and self.config.save_steps > 0
+            and self.current_step % self.config.save_steps == 0
+        )
 
     def _should_early_stop(self) -> bool:
         """Check if early stopping should be triggered."""
@@ -922,6 +984,11 @@ class Trainer:
 
         # Generate
         with torch.no_grad():
+            pad_token_id = getattr(self.tokenizer, "pad_token_id", None)
+            eos_token_id = getattr(self.tokenizer, "eos_token_id", None)
+            if pad_token_id is None:
+                pad_token_id = eos_token_id
+
             generated_ids = self.model.generate(
                 input_ids=input_ids,
                 max_length=max_length,
@@ -929,8 +996,8 @@ class Trainer:
                 top_k=top_k,
                 top_p=top_p,
                 do_sample=do_sample,
-                pad_token_id=self.tokenizer.pad_token_id,
-                eos_token_id=self.tokenizer.eos_token_id
+                pad_token_id=pad_token_id,
+                eos_token_id=eos_token_id
             )
 
         # Decode generated text
@@ -1098,10 +1165,17 @@ class Trainer:
         """Setup efficient attention mechanisms."""
         try:
             # Enable efficient attention if PyTorch 2.0+ is available
-            if hasattr(torch.nn.functional, 'scaled_dot_product_attention'):
-                torch.backends.cuda.enable_flash_sdp(True)
-                torch.backends.cuda.enable_math_sdp(False)
-                torch.backends.cuda.enable_mem_efficient_sdp(False)
+            if (
+                hasattr(torch.nn.functional, 'scaled_dot_product_attention')
+                and torch.cuda.is_available()
+                and hasattr(torch.backends, 'cuda')
+            ):
+                if hasattr(torch.backends.cuda, 'enable_flash_sdp'):
+                    torch.backends.cuda.enable_flash_sdp(True)
+                if hasattr(torch.backends.cuda, 'enable_math_sdp'):
+                    torch.backends.cuda.enable_math_sdp(False)
+                if hasattr(torch.backends.cuda, 'enable_mem_efficient_sdp'):
+                    torch.backends.cuda.enable_mem_efficient_sdp(False)
                 self.logger.info("Enabled efficient attention (Flash Attention)")
         except Exception as e:
             self.logger.warning(f"Failed to setup efficient attention: {e}")

@@ -226,6 +226,12 @@ scratch/
 playground/
 test_outputs/
 
+# Local tooling directories
+/.qoder/
+/.qodo/
+/.venv/
+/llm_trainer.egg-info/
+
 # API keys and credentials
 *.key
 *.pem

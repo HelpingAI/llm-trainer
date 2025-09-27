@@ -37,7 +37,7 @@ def get_device() -> torch.device:
 
 
 def setup_logging(log_level: str = "info", log_file: Optional[str] = None) -> None:
-    """Setup logging configuration."""
+    """Setup logging configuration without duplicating handlers."""
     level_map = {
         "debug": logging.DEBUG,
         "info": logging.INFO,
@@ -45,29 +45,37 @@ def setup_logging(log_level: str = "info", log_file: Optional[str] = None) -> No
         "error": logging.ERROR,
         "critical": logging.CRITICAL
     }
-    
+
     level = level_map.get(log_level.lower(), logging.INFO)
-    
+
     # Create formatter
     formatter = logging.Formatter(
         '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
-    
+
+    root_logger = logging.getLogger()
+    root_logger.setLevel(level)
+
+    # Remove existing llm-trainer handlers to avoid duplicate logs
+    existing_handlers = list(root_logger.handlers)
+    for handler in existing_handlers:
+        if getattr(handler, "_llm_trainer_handler", False):
+            root_logger.removeHandler(handler)
+            handler.close()
+
     # Setup console handler
     console_handler = logging.StreamHandler()
     console_handler.setLevel(level)
     console_handler.setFormatter(formatter)
-    
-    # Setup root logger
-    root_logger = logging.getLogger()
-    root_logger.setLevel(level)
+    console_handler._llm_trainer_handler = True  # type: ignore[attr-defined]
     root_logger.addHandler(console_handler)
-    
+
     # Setup file handler if specified
     if log_file:
         file_handler = logging.FileHandler(log_file)
         file_handler.setLevel(level)
         file_handler.setFormatter(formatter)
+        file_handler._llm_trainer_handler = True  # type: ignore[attr-defined]
         root_logger.addHandler(file_handler)
 
 

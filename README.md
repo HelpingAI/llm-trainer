@@ -13,7 +13,7 @@
 
 </div>
 
-## What's New in v0.2.4
+## What's New in v0.2.6
 
 - **Memory Optimizations**: Efficient training with kernel optimizations
 - **SafeTensors Support**: Secure model serialization with automatic sharding for large models

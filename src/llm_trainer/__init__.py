@@ -13,7 +13,7 @@ This package provides:
 from importlib import import_module
 from typing import Any, Dict, Tuple
 
-__version__ = "0.2.6"
+__version__ = "0.2.7"
 __author__ = "Abhay"
 __email__ = "abhay@helpingai.co"
 __authors__ = [{"name": "Abhay", "email": "abhay@helpingai.co"}]
@@ -21,6 +21,8 @@ __authors__ = [{"name": "Abhay", "email": "abhay@helpingai.co"}]
 _SYMBOL_MAP: Dict[str, Tuple[str, str]] = {
     "TransformerLM": ("llm_trainer.models", "TransformerLM"),
     "BPETokenizer": ("llm_trainer.tokenizer", "BPETokenizer"),
+    "create_tokenizer": ("llm_trainer.tokenizer.factory", "create_tokenizer"),
+    "get_available_tokenizers": ("llm_trainer.tokenizer.factory", "get_available_tokenizers"),
     "Trainer": ("llm_trainer.training.trainer", "Trainer"),
     "create_optimizer": ("llm_trainer.training.optimizer", "create_optimizer"),
     "ModelConfig": ("llm_trainer.config.model_config", "ModelConfig"),
@@ -33,8 +35,6 @@ _SYMBOL_MAP: Dict[str, Tuple[str, str]] = {
     "offload_optimizer_states": ("llm_trainer.kernels.memory_efficient", "offload_optimizer_states"),
     "empty_cache": ("llm_trainer.kernels.memory_efficient", "empty_cache"),
     "efficient_attention_forward": ("llm_trainer.kernels.memory_efficient", "efficient_attention_forward"),
-    "patch_transformers": ("llm_trainer.patching.patch_transformers", "patch_transformers"),
-    "patch_trl": ("llm_trainer.patching.patch_trl", "patch_trl"),
 }
 
 __all__ = list(_SYMBOL_MAP.keys())

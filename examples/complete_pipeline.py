@@ -5,6 +5,7 @@ import os
 import sys
 import json
 from pathlib import Path
+from typing import Dict, Any
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -14,10 +15,10 @@ from llm_trainer.models import TransformerLM
 from llm_trainer.tokenizer import BPETokenizer
 from llm_trainer.training import Trainer
 from llm_trainer.utils.generation import TextGenerator, GenerationConfig
-from llm_trainer.utils.metrics import compute_perplexity, evaluate_generation_quality
+from llm_trainer.utils.metrics import compute_perplexity
 
 
-def main():
+def main() -> Any:
     """Complete pipeline from tokenizer training to model evaluation."""
     
     print("🚀 Starting Complete LLM Training Pipeline")
@@ -52,7 +53,7 @@ def main():
         warmup_steps=1000,
         optimizer="adamw",
         gradient_accumulation_steps=4,
-        use_amp=True,
+        fp16=True,
         save_steps=1000,
         eval_steps=500,
         logging_steps=100,
@@ -89,8 +90,8 @@ def main():
     else:
         print("Training new BPE tokenizer...")
         tokenizer = BPETokenizer()
-        tokenizer.train_from_dataset(
-            dataset_name=data_config.dataset_name,
+        tokenizer.train(
+            data_config.dataset_name,
             dataset_config=data_config.dataset_config,
             vocab_size=data_config.vocab_size,
             max_samples=50000,  # Limit for faster training
@@ -233,7 +234,7 @@ def main():
     print("\n✅ Step 6: Pipeline Summary")
     print("-" * 30)
     
-    summary = {
+    summary: Dict[str, Any] = {
         "model_parameters": model.get_num_params(),
         "tokenizer_vocab_size": tokenizer.vocab_size,
         "training_epochs": training_config.num_epochs,
@@ -255,7 +256,7 @@ def main():
     print(f"  Model Parameters: {summary['model_parameters']:,}")
     print(f"  Vocabulary Size: {summary['tokenizer_vocab_size']:,}")
     print(f"  Training Epochs: {summary['training_epochs']}")
-    print(f"  Generation Quality: Distinct-1={summary['generation_metrics']['distinct_1']:.3f}")
+    print(f"  Generation Quality: Distinct-1={summary['generation_metrics']['distinct_1']:.3f}")  # type: ignore
     
     print("\nNext steps:")
     print("  1. Experiment with different generation parameters")

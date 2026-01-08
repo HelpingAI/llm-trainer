@@ -11,7 +11,6 @@ from pathlib import Path
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-import torch
 from llm_trainer.models import TransformerLM
 from llm_trainer.tokenizer import BPETokenizer
 from llm_trainer.config import ModelConfig, TrainingConfig, DataConfig
@@ -57,8 +56,8 @@ def create_or_load_tokenizer(tokenizer_config: dict, force_retrain: bool = False
     vocab_size = tokenizer_config.get("vocab_size", 50000)
     max_samples = tokenizer_config.get("max_samples")
     
-    tokenizer.train_from_dataset(
-        dataset_name=dataset_name,
+    tokenizer.train(
+        dataset_name,
         dataset_config=dataset_config,
         vocab_size=vocab_size,
         max_samples=max_samples,
@@ -199,7 +198,8 @@ def main():
         # Apply CPU-specific optimizations if device is CPU
         if args.device == "cpu":
             logging.info("Applying CPU optimizations...")
-            training_config.use_amp = False
+            training_config.fp16 = False
+            training_config.bf16 = False
             training_config.dataloader_pin_memory = False
             # Reduce workers to avoid overhead on CPU
             if hasattr(training_config, 'dataloader_num_workers'):

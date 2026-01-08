@@ -4,8 +4,8 @@ import re
 import json
 import math
 import unicodedata
-from collections import defaultdict, Counter
-from typing import List, Dict, Tuple, Set, Optional, Union, Any
+from collections import Counter
+from typing import List, Dict, Tuple, Set, Optional, Any
 from tqdm import tqdm
 from functools import lru_cache
 
@@ -24,34 +24,34 @@ class WordPieceTokenizer(BaseTokenizer):
     - Performance optimizations including LRU caching
     - Unicode and emoji support matching BPE capabilities
     """
-    
+
     def __init__(self):
         super().__init__()
-        
+
         # Override default special tokens to use BERT-style format
         self.pad_token = "[PAD]"
         self.unk_token = "[UNK]"
         self.cls_token = "[CLS]"
         self.sep_token = "[SEP]"
         self.mask_token = "[MASK]"
-        
+
         # Special token IDs
         self.pad_token_id = 0
         self.unk_token_id = 1
         self.cls_token_id = 2
         self.sep_token_id = 3
         self.mask_token_id = 4
-        
+
         # WordPiece-specific attributes
         self.continuation_prefix = "##"
         self.max_subword_length = 100
         self.cache: Dict[str, List[str]] = {}
         self.token_scores: Dict[str, float] = {}
-        
+
         # Training data
         self.merge_history: List[Tuple[str, str, float]] = []
         self.training_stats: Dict[str, Any] = {}
-        
+
         # Regex pattern for pre-tokenization (enhanced from BPE for WordPiece)
         # Similar to BERT's BasicTokenizer but with enhanced Unicode support
         pattern = (
@@ -71,12 +71,12 @@ class WordPieceTokenizer(BaseTokenizer):
             r"\s+(?!\S)|\s+"  # Whitespace
         )
         self.pat = re.compile(pattern, re.IGNORECASE)
-    
+
     def _get_word_tokens(self, text: str) -> List[str]:
         """Pre-tokenize text into words using regex pattern."""
         # Normalize unicode
         text = unicodedata.normalize('NFC', text)
-        
+
         # Find all matches
         tokens = []
         for match in self.pat.finditer(text):
@@ -85,36 +85,36 @@ class WordPieceTokenizer(BaseTokenizer):
             token_bytes = token.encode('utf-8')
             token = ''.join(chr(b) for b in token_bytes)
             tokens.append(token)
-        
+
         return tokens
-    
+
     def _initialize_training(self, texts: List[str], min_frequency: int) -> Tuple[Dict[str, int], Set[str]]:
         """Initialize character vocabulary and word frequencies."""
-        
+
         # Collect word frequencies
         word_frequencies = Counter()
         for text in texts:
             words = self._get_word_tokens(text)
             word_frequencies.update(words)
-        
+
         # Filter by minimum frequency
-        word_frequencies = {word: freq for word, freq in word_frequencies.items() 
+        word_frequencies = {word: freq for word, freq in word_frequencies.items()
                            if freq >= min_frequency}
-        
+
         # Extract all unique characters
         characters = set()
         for word in word_frequencies:
             characters.update(word)
-        
+
         # Initialize vocabulary with special tokens + characters
         vocab = set()
-        vocab.update([self.pad_token, self.unk_token, self.cls_token, 
+        vocab.update([self.pad_token, self.unk_token, self.cls_token,
                      self.sep_token, self.mask_token])
         vocab.update(characters)
-        
+
         return word_frequencies, vocab
-    
-    def _calculate_likelihood_score(self, token_a: str, token_b: str, 
+
+    def _calculate_likelihood_score(self, token_a: str, token_b: str,
                                    token_counts: Dict[str, int]) -> float:
         """
         Calculate likelihood improvement for merging token_a and token_b.
@@ -124,64 +124,64 @@ class WordPieceTokenizer(BaseTokenizer):
         # Count occurrences of the merged token
         merged_token = token_a + token_b
         count_merged = 0
-        
+
         # Count adjacent pairs in the current tokenization
         for word_tokens, freq in token_counts.items():
             tokens = word_tokens.split()
             for i in range(len(tokens) - 1):
                 if tokens[i] == token_a and tokens[i + 1] == token_b:
                     count_merged += freq
-        
+
         # Get individual token counts
-        count_a = sum(freq for word_tokens, freq in token_counts.items() 
+        count_a = sum(freq for word_tokens, freq in token_counts.items()
                      if token_a in word_tokens.split())
-        count_b = sum(freq for word_tokens, freq in token_counts.items() 
+        count_b = sum(freq for word_tokens, freq in token_counts.items()
                      if token_b in word_tokens.split())
-        
+
         # Calculate total tokens
-        total_tokens = sum(len(word_tokens.split()) * freq 
+        total_tokens = sum(len(word_tokens.split()) * freq
                           for word_tokens, freq in token_counts.items())
-        
+
         # Calculate probabilities
         if count_a == 0 or count_b == 0 or count_merged == 0 or total_tokens == 0:
             return float('-inf')
-        
+
         prob_a = count_a / total_tokens
         prob_b = count_b / total_tokens
         prob_merged = count_merged / total_tokens
-        
+
         # Calculate likelihood score
         try:
             score = math.log(prob_merged) - math.log(prob_a) - math.log(prob_b)
             return score
         except (ValueError, ZeroDivisionError):
             return float('-inf')
-    
+
     def _find_merge_candidates(self, token_counts: Dict[str, int]) -> Set[Tuple[str, str]]:
         """Find all possible merge candidates from current tokenization."""
         candidates = set()
-        
+
         for word_tokens in token_counts:
             tokens = word_tokens.split()
             for i in range(len(tokens) - 1):
                 candidates.add((tokens[i], tokens[i + 1]))
-        
+
         return candidates
-    
-    def _apply_merge(self, merge_pair: Tuple[str, str], 
+
+    def _apply_merge(self, merge_pair: Tuple[str, str],
                     token_counts: Dict[str, int]) -> Dict[str, int]:
         """Apply a merge to the current tokenization."""
         token_a, token_b = merge_pair
         merged_token = token_a + token_b
         new_token_counts = {}
-        
+
         for word_tokens, freq in token_counts.items():
             tokens = word_tokens.split()
             new_tokens = []
             i = 0
-            
+
             while i < len(tokens):
-                if (i < len(tokens) - 1 and 
+                if (i < len(tokens) - 1 and
                     tokens[i] == token_a and tokens[i + 1] == token_b):
                     # Apply the merge
                     new_tokens.append(merged_token)
@@ -189,18 +189,19 @@ class WordPieceTokenizer(BaseTokenizer):
                 else:
                     new_tokens.append(tokens[i])
                     i += 1
-            
+
             new_word_tokens = ' '.join(new_tokens)
             new_token_counts[new_word_tokens] = freq
-        
+
         return new_token_counts
-    
-    def train(self, texts: List[str], vocab_size: int = 30000, 
-              min_frequency: int = 2, verbose: bool = True) -> None:
+
+    def _train_on_texts(self, texts: List[str], vocab_size: int, **kwargs) -> None:
         """Train WordPiece tokenizer using likelihood-based merging."""
+        min_frequency = kwargs.get('min_frequency', 2)
+        verbose = kwargs.get('verbose', True)
         if verbose:
             print("Training WordPiece tokenizer...")
-        
+
         # Initialize special tokens
         self.vocab = {
             self.pad_token: self.pad_token_id,
@@ -209,7 +210,7 @@ class WordPieceTokenizer(BaseTokenizer):
             self.sep_token: self.sep_token_id,
             self.mask_token: self.mask_token_id
         }
-        
+
         self.special_tokens = {
             self.pad_token: self.pad_token_id,
             self.unk_token: self.unk_token_id,
@@ -217,81 +218,81 @@ class WordPieceTokenizer(BaseTokenizer):
             self.sep_token: self.sep_token_id,
             self.mask_token: self.mask_token_id
         }
-        
+
         # Phase 1: Initialize character vocabulary and word frequencies
         if verbose:
             print("Initializing character vocabulary...")
-        
+
         word_frequencies, vocab_set = self._initialize_training(texts, min_frequency)
-        
+
         if verbose:
             print(f"Found {len(word_frequencies)} unique words")
             print(f"Initial character vocabulary size: {len(vocab_set)}")
-        
+
         # Add character tokens to vocabulary
         for char in sorted(vocab_set):
             if char not in self.vocab:
                 self.vocab[char] = len(self.vocab)
-        
+
         # Initialize word tokenizations (character-level)
         token_counts = {}
         for word, freq in word_frequencies.items():
             # Split word into characters
             word_tokens = ' '.join(list(word))
             token_counts[word_tokens] = freq
-        
+
         # Phase 2: Learn WordPiece merges using likelihood scoring
         num_merges = vocab_size - len(self.vocab)
         self.merge_history = []
-        
+
         if verbose:
             print(f"Learning {num_merges} WordPiece merges...")
-        
+
         for i in tqdm(range(num_merges), desc="Learning merges", disable=not verbose):
             # Find all possible merges
             merge_candidates = self._find_merge_candidates(token_counts)
-            
+
             if not merge_candidates:
                 if verbose:
                     print(f"No more merge candidates found at iteration {i}")
                 break
-            
+
             # Score all merges using likelihood
             merge_scores = {}
             for candidate in merge_candidates:
                 score = self._calculate_likelihood_score(candidate[0], candidate[1], token_counts)
                 if score > float('-inf'):
                     merge_scores[candidate] = score
-            
+
             if not merge_scores:
                 if verbose:
                     print(f"No valid merges found at iteration {i}")
                 break
-            
+
             # Select best merge (highest likelihood improvement)
-            best_merge = max(merge_scores, key=merge_scores.get)
+            best_merge = max(merge_scores, key=lambda k: merge_scores[k])
             best_score = merge_scores[best_merge]
-            
+
             if best_score <= 0:
                 if verbose:
                     print(f"No positive likelihood improvement at iteration {i}")
                 break
-            
+
             # Apply the merge
             merged_token = best_merge[0] + best_merge[1]
             self.vocab[merged_token] = len(self.vocab)
             self.merge_history.append((best_merge[0], best_merge[1], best_score))
             self.token_scores[merged_token] = best_score
-            
+
             # Update word tokenizations
             token_counts = self._apply_merge(best_merge, token_counts)
-        
+
         # Build continuation vocabulary (add ## prefixes)
         self._build_continuation_vocab()
-        
+
         # Create inverse vocabulary
         self.inverse_vocab = {v: k for k, v in self.vocab.items()}
-        
+
         # Store training statistics
         self.training_stats = {
             "final_vocab_size": len(self.vocab),
@@ -299,23 +300,23 @@ class WordPieceTokenizer(BaseTokenizer):
             "num_words": len(word_frequencies),
             "min_frequency": min_frequency
         }
-        
+
         if verbose:
             print(f"Final vocabulary size: {len(self.vocab)}")
             print(f"Learned {len(self.merge_history)} merges")
-    
+
     def _build_continuation_vocab(self) -> None:
         """Add continuation tokens (## prefixed) to vocabulary."""
         # Get all non-special tokens
-        regular_tokens = [token for token in self.vocab.keys() 
+        regular_tokens = [token for token in self.vocab.keys()
                          if token not in self.special_tokens]
-        
+
         # Add ## prefixed versions
         for token in regular_tokens:
             continuation_token = self.continuation_prefix + token
             if continuation_token not in self.vocab:
                 self.vocab[continuation_token] = len(self.vocab)
-    
+
     @lru_cache(maxsize=10000)
     def _wordpiece_encode_word(self, word: str) -> Tuple[str, ...]:
         """
@@ -324,82 +325,82 @@ class WordPieceTokenizer(BaseTokenizer):
         """
         if len(word) > self.max_subword_length:
             return (self.unk_token,)
-        
+
         tokens = []
         start = 0
-        
+
         while start < len(word):
             end = len(word)
             longest_match = None
-            
+
             # Find longest matching subword
             while start < end:
                 substr = word[start:end]
-                
+
                 # Add continuation prefix if not at word start
                 if start > 0:
                     substr = self.continuation_prefix + substr
-                
+
                 if substr in self.vocab:
                     longest_match = substr
                     break
                 end -= 1
-            
+
             if longest_match is None:
                 # Unable to tokenize - return UNK
                 return (self.unk_token,)
-            
+
             tokens.append(longest_match)
             start = end
-        
+
         return tuple(tokens)
-    
+
     def encode(self, text: str, add_special_tokens: bool = True) -> List[int]:
         """Encode text to token IDs using WordPiece algorithm."""
         if not text:
             return []
-        
+
         # Pre-tokenize into words
         words = self._get_word_tokens(text)
-        
+
         # Apply WordPiece encoding to each word
         wordpiece_tokens = []
         for word in words:
             word_tokens = list(self._wordpiece_encode_word(word))
             wordpiece_tokens.extend(word_tokens)
-        
+
         # Convert to IDs
         token_ids = []
         for token in wordpiece_tokens:
             token_id = self.vocab.get(token, self.unk_token_id)
             token_ids.append(token_id)
-        
+
         # Add special tokens (BERT-style: [CLS] text [SEP])
         if add_special_tokens:
             token_ids = [self.cls_token_id] + token_ids + [self.sep_token_id]
-        
+
         return token_ids
-    
+
     def decode(self, token_ids: List[int], skip_special_tokens: bool = True) -> str:
         """Decode token IDs to text, handling continuation tokens."""
         if not token_ids:
             return ""
-        
+
         # Convert IDs to tokens
         tokens = []
         for token_id in token_ids:
             token = self.inverse_vocab.get(token_id, self.unk_token)
-            
+
             # Skip special tokens if requested
             if skip_special_tokens and token in self.special_tokens:
                 continue
-            
+
             tokens.append(token)
-        
+
         # Join tokens and handle continuation prefixes
         text_parts = []
         current_word = ""
-        
+
         for token in tokens:
             if token.startswith(self.continuation_prefix):
                 # Continuation token - append to current word
@@ -409,83 +410,28 @@ class WordPieceTokenizer(BaseTokenizer):
                 if current_word:
                     text_parts.append(current_word)
                 current_word = token
-        
+
         # Add the last word
         if current_word:
             text_parts.append(current_word)
-        
+
         # Join with spaces and clean up
         text = ' '.join(text_parts)
         text = re.sub(r'\s+', ' ', text).strip()
-        
+
         return text
-    
-    def train_from_dataset(self, dataset_name: str, dataset_config: Optional[str] = None,
-                          split: str = "train", text_column: str = "text",
-                          vocab_size: int = 30000, max_samples: Optional[int] = None,
-                          verbose: bool = True) -> None:
-        """Train tokenizer from Hugging Face dataset."""
-        try:
-            from datasets import load_dataset
-        except ImportError:
-            raise ImportError("Please install datasets: pip install datasets")
-        
-        if verbose:
-            print(f"Loading dataset: {dataset_name}")
-            if ":" in split:
-                print(f"Using dataset slice: {split}")
-        
-        # Load dataset with improved error handling
-        try:
-            if dataset_config and dataset_config != dataset_name:
-                dataset = load_dataset(dataset_name, dataset_config, split=split)
-            else:
-                dataset = load_dataset(dataset_name, split=split)
-        except ValueError as e:
-            if "BuilderConfig" in str(e) and "not found" in str(e):
-                if verbose:
-                    print(f"Config '{dataset_config}' not found, trying with default config...")
-                dataset = load_dataset(dataset_name, split=split)
-            else:
-                raise e
-        
-        # Extract texts
-        texts = []
-        if ":" in split:
-            dataset_size = len(dataset)
-            max_samples_to_use = dataset_size
-            if verbose:
-                print(f"Dataset slice loaded: {dataset_size} samples")
-        else:
-            dataset_size = len(dataset)
-            max_samples_to_use = max_samples or dataset_size
-            if verbose:
-                print(f"Dataset size: {dataset_size}, using {max_samples_to_use} samples")
-        
-        for i, example in enumerate(tqdm(dataset, desc="Loading texts", disable=not verbose)):
-            if i >= max_samples_to_use:
-                break
-            
-            text = example[text_column]
-            if text and text.strip():
-                texts.append(text.strip())
-        
-        if verbose:
-            print(f"Loaded {len(texts)} texts")
-        
-        # Train tokenizer
-        self.train(texts, vocab_size=vocab_size, verbose=verbose)
-    
+
+
     def save_pretrained(self, save_directory: str) -> None:
         """Save tokenizer to directory."""
         import os
         os.makedirs(save_directory, exist_ok=True)
-        
+
         # Save base tokenizer data (override to include WordPiece-specific tokens)
         vocab_file = os.path.join(save_directory, "vocab.json")
         with open(vocab_file, 'w', encoding='utf-8') as f:
             json.dump(self.vocab, f, ensure_ascii=False, indent=2)
-        
+
         # Save tokenizer config
         config = {
             "tokenizer_class": self.__class__.__name__,
@@ -499,60 +445,60 @@ class WordPieceTokenizer(BaseTokenizer):
             "continuation_prefix": self.continuation_prefix,
             "max_subword_length": self.max_subword_length
         }
-        
+
         config_file = os.path.join(save_directory, "tokenizer_config.json")
         with open(config_file, 'w', encoding='utf-8') as f:
             json.dump(config, f, indent=2)
-        
+
         # Save WordPiece-specific data
         merges_file = os.path.join(save_directory, "merges.txt")
         with open(merges_file, 'w', encoding='utf-8') as f:
             f.write("#version: 0.2 - WordPiece\n")
             for token_a, token_b, score in self.merge_history:
                 f.write(f"{token_a} {token_b} {score}\n")
-        
+
         # Save token scores
         scores_file = os.path.join(save_directory, "token_scores.json")
         with open(scores_file, 'w', encoding='utf-8') as f:
             json.dump(self.token_scores, f, ensure_ascii=False, indent=2)
-        
+
         # Save training stats
         stats_file = os.path.join(save_directory, "training_stats.json")
         with open(stats_file, 'w', encoding='utf-8') as f:
             json.dump(self.training_stats, f, indent=2)
-    
+
     @classmethod
     def from_pretrained(cls, load_directory: str) -> 'WordPieceTokenizer':
         """Load tokenizer from directory."""
         import os
-        
+
         # Load vocabulary
         vocab_file = os.path.join(load_directory, "vocab.json")
         with open(vocab_file, 'r', encoding='utf-8') as f:
             vocab = json.load(f)
-        
+
         # Load config
         config_file = os.path.join(load_directory, "tokenizer_config.json")
         with open(config_file, 'r', encoding='utf-8') as f:
             config = json.load(f)
-        
+
         # Create tokenizer instance
         tokenizer = cls()
         tokenizer.vocab = vocab
         tokenizer.inverse_vocab = {v: k for k, v in vocab.items()}
         tokenizer.special_tokens = config["special_tokens"]
-        
+
         # Set special token attributes
         for token_name in ["pad", "unk", "cls", "sep", "mask"]:
             if f"{token_name}_token" in config:
                 token = config[f"{token_name}_token"]
                 setattr(tokenizer, f"{token_name}_token", token)
                 setattr(tokenizer, f"{token_name}_token_id", vocab[token])
-        
+
         # Set WordPiece-specific attributes
         tokenizer.continuation_prefix = config.get("continuation_prefix", "##")
         tokenizer.max_subword_length = config.get("max_subword_length", 100)
-        
+
         # Load merge history
         merges_file = os.path.join(load_directory, "merges.txt")
         merge_history = []
@@ -565,26 +511,26 @@ class WordPieceTokenizer(BaseTokenizer):
                         parts = line.split()
                         if len(parts) == 3:
                             merge_history.append((parts[0], parts[1], float(parts[2])))
-        
+
         tokenizer.merge_history = merge_history
-        
+
         # Load token scores
         scores_file = os.path.join(load_directory, "token_scores.json")
         if os.path.exists(scores_file):
             with open(scores_file, 'r', encoding='utf-8') as f:
                 tokenizer.token_scores = json.load(f)
-        
+
         # Load training stats
         stats_file = os.path.join(load_directory, "training_stats.json")
         if os.path.exists(stats_file):
             with open(stats_file, 'r', encoding='utf-8') as f:
                 tokenizer.training_stats = json.load(f)
-        
+
         # Clear cache
         tokenizer.cache = {}
-        
+
         return tokenizer
-    
+
     # Analysis and utility methods
     def get_tokenization_stats(self) -> Dict[str, Any]:
         """Get comprehensive tokenization statistics."""
@@ -598,12 +544,12 @@ class WordPieceTokenizer(BaseTokenizer):
             "max_subword_length": self.max_subword_length,
             "cache_size": len(self.cache)
         }
-        
+
         if self.training_stats:
             stats.update(self.training_stats)
-        
+
         return stats
-    
+
     def analyze_word_segmentation(self, words: List[str]) -> Dict[str, List[str]]:
         """Analyze how words are segmented by the tokenizer."""
         segmentations = {}
@@ -611,33 +557,33 @@ class WordPieceTokenizer(BaseTokenizer):
             tokens = list(self._wordpiece_encode_word(word))
             segmentations[word] = tokens
         return segmentations
-    
+
     def get_merge_history(self) -> List[Tuple[str, str, float]]:
         """Get the history of merges with their likelihood scores."""
         return self.merge_history.copy()
-    
+
     def calculate_compression_ratio(self, texts: List[str]) -> float:
         """Calculate compression ratio (characters per token)."""
         total_chars = sum(len(text) for text in texts)
         total_tokens = sum(len(self.encode(text, add_special_tokens=False)) for text in texts)
-        
+
         if total_tokens == 0:
             return 0.0
-        
+
         return total_chars / total_tokens
-    
+
     def set_max_subword_length(self, length: int) -> None:
         """Set maximum subword length."""
         self.max_subword_length = length
         # Clear cache since encoding behavior changes
         self.cache.clear()
         self._wordpiece_encode_word.cache_clear()
-    
+
     def set_continuation_prefix(self, prefix: str) -> None:
         """Set continuation prefix (default: ##)."""
         old_prefix = self.continuation_prefix
         self.continuation_prefix = prefix
-        
+
         # Update vocabulary if already trained
         if self.vocab:
             new_vocab = {}
@@ -647,14 +593,14 @@ class WordPieceTokenizer(BaseTokenizer):
                     new_vocab[new_token] = token_id
                 else:
                     new_vocab[token] = token_id
-            
+
             self.vocab = new_vocab
             self.inverse_vocab = {v: k for k, v in self.vocab.items()}
-        
+
         # Clear cache
         self.cache.clear()
         self._wordpiece_encode_word.cache_clear()
-    
+
     def enable_caching(self, cache_size: int = 10000) -> None:
         """Enable/resize LRU cache for encoding."""
         # Update the cache size for the LRU cache decorator

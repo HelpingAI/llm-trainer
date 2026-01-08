@@ -95,7 +95,7 @@ def main():
         warmup_steps=500,
         optimizer="adamw",
         gradient_accumulation_steps=device_config["gradient_accumulation_steps"],
-        use_amp=device_config["use_amp"],
+        fp16=device_config["use_amp"],
         save_steps=device_config["save_steps"],
         eval_steps=device_config["eval_steps"],
         logging_steps=device_config["logging_steps"],
@@ -136,8 +136,8 @@ def main():
     print("Creating tokenizer...")
     # Create and train tokenizer
     tokenizer = BPETokenizer()
-    tokenizer.train_from_dataset(
-        dataset_name=data_config.dataset_name,
+    tokenizer.train(
+        data_config.dataset_name,
         dataset_config=data_config.dataset_config,
         vocab_size=data_config.vocab_size,
         max_samples=10000,  # Limit for faster training

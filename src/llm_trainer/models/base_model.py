@@ -3,7 +3,7 @@
 import torch
 import torch.nn as nn
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional, Union, Tuple
+from typing import Dict, Any, Optional, Union
 from dataclasses import dataclass
 
 from ..config import ModelConfig
@@ -12,16 +12,16 @@ from ..config import ModelConfig
 @dataclass
 class BaseArchitectureConfig:
     """Base configuration class for different model architectures."""
-    
+
     model_type: str
     vocab_size: int
     hidden_size: int
     max_position_embeddings: int
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return self.__dict__.copy()
-    
+
     @classmethod
     def from_dict(cls, config_dict: Dict[str, Any]) -> 'BaseArchitectureConfig':
         """Create from dictionary."""
@@ -30,13 +30,13 @@ class BaseArchitectureConfig:
 
 class BaseLanguageModel(nn.Module, ABC):
     """Abstract base class for all language models in the framework."""
-    
+
     def __init__(self, config: Union[ModelConfig, BaseArchitectureConfig]):
         super().__init__()
         self.config = config
-        
+
     @abstractmethod
-    def forward(self, input_ids: torch.Tensor, 
+    def forward(self, input_ids: torch.Tensor,
                 attention_mask: Optional[torch.Tensor] = None,
                 labels: Optional[torch.Tensor] = None,
                 **kwargs) -> Dict[str, torch.Tensor]:
@@ -53,7 +53,7 @@ class BaseLanguageModel(nn.Module, ABC):
             Dictionary containing at least 'logits' and optionally 'loss'
         """
         pass
-    
+
     @abstractmethod
     def generate(self, input_ids: torch.Tensor, max_length: int = 100,
                  temperature: float = 1.0, top_k: Optional[int] = None,
@@ -75,36 +75,38 @@ class BaseLanguageModel(nn.Module, ABC):
             Generated token IDs of shape (batch_size, max_length)
         """
         pass
-    
+
     @abstractmethod
     def get_num_params(self, non_embedding: bool = False) -> int:
         """Get number of parameters in the model."""
         pass
-    
+
     def get_input_embeddings(self) -> nn.Module:
         """Get the input embeddings layer."""
         if hasattr(self, 'embeddings'):
-            if hasattr(self.embeddings, 'token_embedding'):
-                return self.embeddings.token_embedding
-            elif hasattr(self.embeddings, 'word_embeddings'):
-                return self.embeddings.word_embeddings
+            embeddings = getattr(self, 'embeddings')
+            if hasattr(embeddings, 'token_embedding'):
+                return getattr(embeddings, 'token_embedding')
+            elif hasattr(embeddings, 'word_embeddings'):
+                return getattr(embeddings, 'word_embeddings')
         elif hasattr(self, 'embed_tokens'):
-            return self.embed_tokens
-        else:
-            raise NotImplementedError("Input embeddings not found")
-    
+            return getattr(self, 'embed_tokens')
+        
+        raise NotImplementedError("Input embeddings not found")
+
     def set_input_embeddings(self, value: nn.Module) -> None:
         """Set the input embeddings layer."""
         if hasattr(self, 'embeddings'):
-            if hasattr(self.embeddings, 'token_embedding'):
-                self.embeddings.token_embedding = value
-            elif hasattr(self.embeddings, 'word_embeddings'):
-                self.embeddings.word_embeddings = value
+            embeddings = getattr(self, 'embeddings')
+            if hasattr(embeddings, 'token_embedding'):
+                setattr(embeddings, 'token_embedding', value)
+            elif hasattr(embeddings, 'word_embeddings'):
+                setattr(embeddings, 'word_embeddings', value)
         elif hasattr(self, 'embed_tokens'):
-            self.embed_tokens = value
+            setattr(self, 'embed_tokens', value)
         else:
             raise NotImplementedError("Cannot set input embeddings")
-    
+
     def get_output_embeddings(self) -> Optional[nn.Module]:
         """Get the output embeddings layer (language modeling head)."""
         if hasattr(self, 'lm_head'):
@@ -113,7 +115,7 @@ class BaseLanguageModel(nn.Module, ABC):
             return self.output_projection
         else:
             return None
-    
+
     def set_output_embeddings(self, value: nn.Module) -> None:
         """Set the output embeddings layer."""
         if hasattr(self, 'lm_head'):
@@ -122,49 +124,59 @@ class BaseLanguageModel(nn.Module, ABC):
             self.output_projection = value
         else:
             raise NotImplementedError("Cannot set output embeddings")
-    
+
     def resize_token_embeddings(self, new_num_tokens: int) -> nn.Module:
         """Resize token embeddings to accommodate new vocabulary size."""
         # Get current embeddings
         old_embeddings = self.get_input_embeddings()
-        old_num_tokens, embedding_dim = old_embeddings.weight.shape
         
+        # Ensure it's an Embedding layer for type safety
+        if not isinstance(old_embeddings, nn.Embedding):
+            raise TypeError(f"Expected nn.Embedding, got {type(old_embeddings)}")
+            
+        old_num_tokens, embedding_dim = old_embeddings.weight.shape
+
         # Create new embeddings
         new_embeddings = nn.Embedding(new_num_tokens, embedding_dim)
-        
+
         # Copy old weights
         num_tokens_to_copy = min(old_num_tokens, new_num_tokens)
-        new_embeddings.weight.data[:num_tokens_to_copy] = old_embeddings.weight.data[:num_tokens_to_copy]
-        
+        with torch.no_grad():
+            new_embeddings.weight.data[:num_tokens_to_copy] = old_embeddings.weight.data[:num_tokens_to_copy]
+
         # Set new embeddings
         self.set_input_embeddings(new_embeddings)
-        
+
         # Also resize output embeddings if they exist
         output_embeddings = self.get_output_embeddings()
         if output_embeddings is not None:
+            if not isinstance(output_embeddings, nn.Linear):
+                raise TypeError(f"Expected nn.Linear for output embeddings, got {type(output_embeddings)}")
+                
             old_lm_head_weights = output_embeddings.weight.data
             new_lm_head = nn.Linear(embedding_dim, new_num_tokens, bias=output_embeddings.bias is not None)
-            
+
             # Copy old weights
-            new_lm_head.weight.data[:num_tokens_to_copy] = old_lm_head_weights[:num_tokens_to_copy]
-            if output_embeddings.bias is not None:
-                new_lm_head.bias.data[:num_tokens_to_copy] = output_embeddings.bias.data[:num_tokens_to_copy]
-            
+            with torch.no_grad():
+                new_lm_head.weight.data[:num_tokens_to_copy] = old_lm_head_weights[:num_tokens_to_copy]
+                if output_embeddings.bias is not None:
+                    new_lm_head.bias.data[:num_tokens_to_copy] = output_embeddings.bias.data[:num_tokens_to_copy]
+
             self.set_output_embeddings(new_lm_head)
-        
+
         # Update config if it has vocab_size
         if hasattr(self.config, 'vocab_size'):
-            self.config.vocab_size = new_num_tokens
-        
+            setattr(self.config, 'vocab_size', new_num_tokens)
+
         return new_embeddings
-    
+
     @classmethod
     @abstractmethod
     def from_config(cls, config: Union[ModelConfig, BaseArchitectureConfig]) -> 'BaseLanguageModel':
         """Create model from configuration."""
         pass
-    
-    def save_pretrained(self, save_directory: str, 
+
+    def save_pretrained(self, save_directory: str,
                        safe_serialization: bool = True,
                        max_shard_size: Union[str, int] = "5GB",
                        push_to_hub: bool = False,
@@ -181,12 +193,12 @@ class BaseLanguageModel(nn.Module, ABC):
         """
         import os
         os.makedirs(save_directory, exist_ok=True)
-        
+
         # Try to save with SafeTensors first if requested
         if safe_serialization:
             try:
                 from .safetensors_utils import save_model_safetensors, is_safetensors_available
-                
+
                 if is_safetensors_available():
                     # Save with SafeTensors (with sharding support)
                     metadata = {
@@ -200,21 +212,28 @@ class BaseLanguageModel(nn.Module, ABC):
             except Exception as e:
                 print(f"Warning: Failed to save with SafeTensors ({e}), falling back to PyTorch format")
                 safe_serialization = False
-        
+
         # Fallback to PyTorch format or if SafeTensors failed
         if not safe_serialization:
             model_path = os.path.join(save_directory, "pytorch_model.bin")
             torch.save(self.state_dict(), model_path)
-        
+
         # Save configuration
         config_path = os.path.join(save_directory, "config.json")
-        if hasattr(self.config, 'save'):
-            self.config.save(config_path)
+        if hasattr(self.config, 'save') and callable(getattr(self.config, 'save')):
+            save_fn = getattr(self.config, 'save')
+            save_fn(config_path)
         else:
             import json
-            with open(config_path, 'w') as f:
-                json.dump(self.config.to_dict(), f, indent=2)
-    
+            if hasattr(self.config, 'to_dict'):
+                to_dict_fn = getattr(self.config, 'to_dict')
+                with open(config_path, 'w') as f:
+                    json.dump(to_dict_fn(), f, indent=2)
+            else:
+                # Last resort fallback
+                with open(config_path, 'w') as f:
+                    json.dump(vars(self.config), f, indent=2)
+
     @classmethod
     def from_pretrained(cls, model_name_or_path: str, **kwargs) -> 'BaseLanguageModel':
         """
@@ -226,29 +245,35 @@ class BaseLanguageModel(nn.Module, ABC):
             **kwargs: Additional arguments
         """
         import os
-        
+
         if os.path.isdir(model_name_or_path):
             # Load from local directory
             config_path = os.path.join(model_name_or_path, "config.json")
             if hasattr(cls, '_config_class'):
-                config = cls._config_class.load(config_path)
+                config_class = getattr(cls, '_config_class')
+                if hasattr(config_class, 'load') and callable(getattr(config_class, 'load')):
+                    load_fn = getattr(config_class, 'load')
+                    config = load_fn(config_path)
+                else:
+                    from ..config import ModelConfig
+                    config = ModelConfig.load(config_path)
             else:
                 # Fallback to ModelConfig
                 from ..config import ModelConfig
                 config = ModelConfig.load(config_path)
-            
+
             # Create model
             model = cls.from_config(config)
-            
+
             # Try to load from SafeTensors first, then fallback to PyTorch
             safetensors_path = os.path.join(model_name_or_path, "model.safetensors")
             safetensors_index_path = os.path.join(model_name_or_path, "model.safetensors.index.json")
             pytorch_path = os.path.join(model_name_or_path, "pytorch_model.bin")
-            
+
             if os.path.exists(safetensors_path) or os.path.exists(safetensors_index_path):
                 try:
                     from .safetensors_utils import load_model_safetensors, is_safetensors_available
-                    
+
                     if is_safetensors_available():
                         load_model_safetensors(model, model_name_or_path)
                         print("Model loaded from SafeTensors format")
@@ -268,7 +293,7 @@ class BaseLanguageModel(nn.Module, ABC):
                 print("Model loaded from PyTorch format")
             else:
                 raise FileNotFoundError(f"No model files found in {model_name_or_path}")
-            
+
             return model
         else:
             raise NotImplementedError("Loading from HuggingFace Hub should be implemented by subclasses")
@@ -276,26 +301,26 @@ class BaseLanguageModel(nn.Module, ABC):
 
 class HuggingFaceModelWrapper(BaseLanguageModel):
     """Wrapper for HuggingFace models to conform to our interface."""
-    
+
     def __init__(self, hf_model, config: Optional[BaseArchitectureConfig] = None):
         # Don't call super().__init__ as we're wrapping an existing model
         nn.Module.__init__(self)
         self.model = hf_model
         self.config = config or self._extract_config_from_hf_model(hf_model)
-        
+
     def _extract_config_from_hf_model(self, hf_model) -> BaseArchitectureConfig:
         """Extract configuration from HuggingFace model."""
         hf_config = hf_model.config
-        
+
         return BaseArchitectureConfig(
             model_type=getattr(hf_config, 'model_type', 'unknown'),
             vocab_size=getattr(hf_config, 'vocab_size', 50000),
             hidden_size=getattr(hf_config, 'hidden_size', getattr(hf_config, 'd_model', 512)),
-            max_position_embeddings=getattr(hf_config, 'max_position_embeddings', 
+            max_position_embeddings=getattr(hf_config, 'max_position_embeddings',
                                           getattr(hf_config, 'max_seq_len', 1024))
         )
-    
-    def forward(self, input_ids: torch.Tensor, 
+
+    def forward(self, input_ids: torch.Tensor,
                 attention_mask: Optional[torch.Tensor] = None,
                 labels: Optional[torch.Tensor] = None,
                 **kwargs) -> Dict[str, torch.Tensor]:
@@ -306,7 +331,7 @@ class HuggingFaceModelWrapper(BaseLanguageModel):
             labels=labels,
             **kwargs
         )
-        
+
         # Convert HF outputs to our format
         result = {"logits": outputs.logits}
         if hasattr(outputs, 'loss') and outputs.loss is not None:
@@ -315,9 +340,9 @@ class HuggingFaceModelWrapper(BaseLanguageModel):
             result["hidden_states"] = outputs.hidden_states
         if hasattr(outputs, 'attentions') and outputs.attentions is not None:
             result["attention_weights"] = outputs.attentions
-            
+
         return result
-    
+
     def generate(self, input_ids: torch.Tensor, max_length: int = 100,
                  temperature: float = 1.0, top_k: Optional[int] = None,
                  top_p: Optional[float] = None, do_sample: bool = True,
@@ -329,14 +354,14 @@ class HuggingFaceModelWrapper(BaseLanguageModel):
             'do_sample': do_sample,
             **kwargs
         }
-        
+
         if top_k is not None:
             generation_kwargs['top_k'] = top_k
         if top_p is not None:
             generation_kwargs['top_p'] = top_p
-            
+
         return self.model.generate(input_ids, **generation_kwargs)
-    
+
     def get_num_params(self, non_embedding: bool = False) -> int:
         """Get number of parameters in the wrapped model."""
         if hasattr(self.model, 'num_parameters'):
@@ -347,39 +372,43 @@ class HuggingFaceModelWrapper(BaseLanguageModel):
                 embed_params = sum(p.numel() for p in self.model.get_input_embeddings().parameters())
                 n_params -= embed_params
             return n_params
-    
+
     def get_input_embeddings(self) -> nn.Module:
         """Get input embeddings from HuggingFace model."""
         return self.model.get_input_embeddings()
-    
+
     def set_input_embeddings(self, value: nn.Module) -> None:
         """Set input embeddings in HuggingFace model."""
         self.model.set_input_embeddings(value)
-    
+
     def get_output_embeddings(self) -> Optional[nn.Module]:
         """Get output embeddings from HuggingFace model."""
         if hasattr(self.model, 'get_output_embeddings'):
             return self.model.get_output_embeddings()
         return None
-    
+
     def set_output_embeddings(self, value: nn.Module) -> None:
         """Set output embeddings in HuggingFace model."""
         if hasattr(self.model, 'set_output_embeddings'):
             self.model.set_output_embeddings(value)
-    
+
     def resize_token_embeddings(self, new_num_tokens: int) -> nn.Module:
         """Resize token embeddings in HuggingFace model."""
         return self.model.resize_token_embeddings(new_num_tokens)
-    
+
     @classmethod
-    def from_config(cls, config: BaseArchitectureConfig) -> 'HuggingFaceModelWrapper':
+    def from_config(cls, config: Union[ModelConfig, BaseArchitectureConfig]) -> 'HuggingFaceModelWrapper':
         """Create wrapper from configuration (not typically used)."""
         raise NotImplementedError("HuggingFaceModelWrapper should be created with an existing HF model")
-    
-    def save_pretrained(self, save_directory: str) -> None:
+
+    def save_pretrained(self, save_directory: str,
+                       safe_serialization: bool = True,
+                       max_shard_size: Union[str, int] = "5GB",
+                       push_to_hub: bool = False,
+                       **kwargs) -> None:
         """Save the wrapped HuggingFace model."""
         self.model.save_pretrained(save_directory)
-    
+
     @classmethod
     def from_pretrained(cls, model_name_or_path: str, **kwargs) -> 'HuggingFaceModelWrapper':
         """Load HuggingFace model and wrap it."""

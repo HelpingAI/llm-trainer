@@ -1,7 +1,7 @@
 """Training configuration for LLM training with TRL-style parameters."""
 
 from dataclasses import dataclass
-from typing import Optional, List, Dict, Any
+from typing import Optional, List
 import yaml
 import json
 import torch
@@ -35,8 +35,8 @@ class TrainingConfig:
     gradient_accumulation_steps: int = 1
 
     # Mixed precision training
-    use_amp: bool = True
-    amp_dtype: str = "float16"  # float16, bfloat16
+    fp16: bool = False
+    bf16: bool = False
 
     # Checkpointing
     save_steps: int = 1000
@@ -52,7 +52,7 @@ class TrainingConfig:
     # Logging
     logging_steps: int = 100
     log_level: str = "info"
-    report_to: List[str] = None  # ["tensorboard", "wandb"]
+    report_to: Optional[List[str]] = None  # None or list like ["tensorboard", "wandb"]
 
     # Data loading
     dataloader_num_workers: int = 4
@@ -93,9 +93,11 @@ class TrainingConfig:
     early_stopping_patience: Optional[int] = None
     early_stopping_threshold: float = 0.0
 
-    # Model compilation (PyTorch 2.0+)
-    compile_model: bool = False
-    compile_mode: str = "default"  # default, reduce-overhead, max-autotune
+    # Memory optimization
+    use_gradient_checkpointing: bool = False
+    use_low_vram: bool = False
+    fuse_layers: bool = False
+    empty_cache_steps: int = 0
 
     # TRL-style parameters (for compatibility)
     per_device_train_batch_size: Optional[int] = None
@@ -109,9 +111,6 @@ class TrainingConfig:
 
     def __post_init__(self):
         """Validate and set default values."""
-        if self.report_to is None:
-            self.report_to = ["tensorboard"]
-
         # Map TRL-style parameters to our parameters
         if self.per_device_train_batch_size is not None:
             self.batch_size = self.per_device_train_batch_size
@@ -128,23 +127,26 @@ class TrainingConfig:
         assert self.batch_size > 0, "batch_size must be positive"
         assert self.learning_rate > 0, "learning_rate must be positive"
         assert 0 <= self.weight_decay <= 1, "weight_decay must be between 0 and 1"
-        assert self.gradient_accumulation_steps > 0, "gradient_accumulation_steps must be positive"
-        assert self.warmup_steps >= 0, "warmup_steps must be non-negative"
-        assert 0 <= self.warmup_ratio <= 1, "warmup_ratio must be between 0 and 1"
-        assert 0 <= self.min_lr_ratio <= 1, "min_lr_ratio must be between 0 and 1"
-        assert self.max_grad_norm > 0, "max_grad_norm must be positive"
+        if self.gradient_accumulation_steps <= 0:
+            raise ValueError("gradient_accumulation_steps must be > 0")
+        if self.warmup_steps < 0:
+            raise ValueError("warmup_steps must be non-negative")
+        if not (0 <= self.warmup_ratio <= 1):
+            raise ValueError("warmup_ratio must be between 0 and 1")
+        if not (0 <= self.min_lr_ratio <= 1):
+            raise ValueError("min_lr_ratio must be between 0 and 1")
+        if self.max_grad_norm <= 0:
+            raise ValueError("max_grad_norm must be positive")
 
         # Scheduler validation
         valid_schedulers = ["cosine", "linear", "constant", "polynomial"]
-        assert self.lr_scheduler in valid_schedulers, f"lr_scheduler must be one of {valid_schedulers}"
+        if self.lr_scheduler not in valid_schedulers:
+            raise ValueError("lr_scheduler must be one of %s" % valid_schedulers)
 
         # Optimizer validation
         valid_optimizers = ["adamw", "adam", "sgd"]
-        assert self.optimizer in valid_optimizers, f"optimizer must be one of {valid_optimizers}"
-
-        # AMP validation
-        valid_amp_dtypes = ["float16", "bfloat16"]
-        assert self.amp_dtype in valid_amp_dtypes, f"amp_dtype must be one of {valid_amp_dtypes}"
+        if self.optimizer not in valid_optimizers:
+            raise ValueError("optimizer must be one of %s" % valid_optimizers)
 
         # Device validation
         valid_devices = ["auto", "cpu", "cuda", "mps"]
@@ -153,8 +155,8 @@ class TrainingConfig:
         # Auto-adjust settings for CPU compatibility
         if self.force_cpu or self.device == "cpu":
             # Disable AMP for CPU training
-            if self.use_amp:
-                self.use_amp = False
+            self.fp16 = False
+            self.bf16 = False
             # Use gloo backend for CPU distributed training
             if self.distributed_backend == "nccl":
                 self.distributed_backend = "gloo"
@@ -204,7 +206,13 @@ class TrainingConfig:
             return False
 
         # Return the configured AMP setting for GPU/MPS devices
-        return self.use_amp
+        return self.fp16 or self.bf16
+
+    def get_amp_dtype(self) -> torch.dtype:
+        """Get the torch dtype for mixed precision training."""
+        if self.bf16:
+            return torch.bfloat16
+        return torch.float16
 
     def get_effective_distributed_backend(self) -> str:
         """Get the effective distributed backend based on device."""

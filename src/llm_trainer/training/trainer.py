@@ -5,8 +5,7 @@ import time
 import logging
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader
-from typing import Optional, Dict, Any, List, Union, Callable
+from typing import Optional, Dict, Any, Callable
 from tqdm import tqdm
 import math
 from contextlib import nullcontext
@@ -17,18 +16,16 @@ from ..data import LanguageModelingDataset, create_dataloader, create_distribute
 from .optimizer import create_optimizer, GradientClipping, ExponentialMovingAverage
 from .scheduler import create_scheduler
 from .utils import (
-    set_seed, get_device, setup_logging, save_checkpoint, load_checkpoint,
+    set_seed, setup_logging, save_checkpoint, load_checkpoint,
     cleanup_checkpoints, MetricsTracker, log_model_info, get_memory_usage,
-    calculate_eta, format_time
+    format_time
 )
 
-# Import patching and kernel optimizations
-from ..patching import patch_transformers, patch_trl
-from ..kernels import *
-from ..kernels.fused_ops import FusedLinear, FusedRMSNorm, fused_cross_entropy
+# Import kernel optimizations
+from ..kernels import *  # noqa: F403
+from ..kernels.fused_ops import FusedLinear, fused_cross_entropy
 from ..kernels.memory_efficient import (
-    gradient_checkpointing, LowVRAMLinear, 
-    offload_optimizer_states, empty_cache, efficient_attention_forward
+    gradient_checkpointing, offload_optimizer_states, empty_cache
 )
 
 
@@ -94,6 +91,13 @@ class Trainer:
                 self.accelerator = None
 
 
+        # Mixed precision setup
+        self.use_amp = self.config.should_use_amp()
+        self.amp_dtype = self.config.get_amp_dtype()
+        self.scaler = None
+        if self.use_amp and self.device.type == "cuda" and not self.config.bf16:
+            self.scaler = torch.amp.GradScaler("cuda")
+
         # Create optimizer
         self.optimizer = create_optimizer(
             model=self.model,
@@ -116,7 +120,7 @@ class Trainer:
 
         # Setup mixed precision training
         self.use_amp = self.config.should_use_amp()
-        self.scaler = None
+        self.scaler: Optional[torch.amp.GradScaler] = None
         if self.use_amp and not getattr(self.config, 'use_accelerate', False):
             if self.device.type != "cuda":
                 self.logger.warning(
@@ -125,7 +129,7 @@ class Trainer:
                 )
                 self.use_amp = False
             elif torch.cuda.is_available():
-                self.scaler = torch.amp.GradScaler(device_type="cuda")
+                self.scaler = torch.amp.GradScaler(device=self.device.type)
             else:
                 self.logger.warning("CUDA unavailable; disabling AMP.")
                 self.use_amp = False
@@ -196,9 +200,6 @@ class Trainer:
         # Log model information
         log_model_info(self.model, self.logger)
 
-        # Apply patching for enhanced functionality
-        self._apply_patching()
-
         # Apply fused layers if requested
         self.apply_fused_layers()
 
@@ -207,20 +208,10 @@ class Trainer:
 
         self.logger.info(f"Trainer initialized with {self.total_steps} total training steps")
 
-    def _apply_patching(self):
-        """Apply patching for enhanced functionality."""
-        try:
-            # Patch Transformers and TRL for enhanced functionality
-            patch_transformers()
-            patch_trl()
-            self.logger.info("Successfully applied patching for enhanced functionality")
-        except Exception as e:
-            self.logger.warning(f"Failed to apply patching: {e}")
-
     def _setup_distributed(self):
         """Setup distributed training."""
-        if not torch.distributed.is_initialized():
-            torch.distributed.init_process_group(
+        if not torch.distributed.is_initialized():  # type: ignore
+            torch.distributed.init_process_group(  # type: ignore
                 backend=self.config.get_effective_distributed_backend(),
                 rank=self.local_rank,
                 world_size=self.config.world_size
@@ -239,28 +230,30 @@ class Trainer:
         """Setup training and evaluation dataloaders."""
         use_accel = getattr(self.config, 'use_accelerate', False) and self.accelerator is not None
         if self.is_distributed and not use_accel:
-            self.train_dataloader = create_distributed_dataloader(
-                dataset=self.train_dataset,
-                batch_size=self.config.batch_size,
-                num_replicas=self.config.world_size,
-                rank=self.local_rank,
-                shuffle=True,
-                num_workers=self.config.dataloader_num_workers,
-                pin_memory=self.config.dataloader_pin_memory,
-                drop_last=self.config.dataloader_drop_last,
-                pad_token_id=self.tokenizer.pad_token_id
-            )
+            if self.train_dataset is not None:
+                self.train_dataloader = create_distributed_dataloader(
+                    dataset=self.train_dataset,
+                    batch_size=self.config.batch_size,
+                    num_replicas=self.config.world_size,
+                    rank=self.local_rank,
+                    shuffle=True,
+                    num_workers=self.config.dataloader_num_workers,
+                    pin_memory=self.config.dataloader_pin_memory,
+                    drop_last=self.config.dataloader_drop_last,
+                    pad_token_id=self.tokenizer.pad_token_id
+                )
         else:
             # For Accelerate or single-process, use regular DataLoader; Accelerate will wrap it
-            self.train_dataloader = create_dataloader(
-                dataset=self.train_dataset,
-                batch_size=self.config.batch_size,
-                shuffle=True,
-                num_workers=self.config.dataloader_num_workers,
-                pin_memory=self.config.dataloader_pin_memory,
-                drop_last=self.config.dataloader_drop_last,
-                pad_token_id=self.tokenizer.pad_token_id
-            )
+            if self.train_dataset is not None:
+                self.train_dataloader = create_dataloader(
+                    dataset=self.train_dataset,
+                    batch_size=self.config.batch_size,
+                    shuffle=True,
+                    num_workers=self.config.dataloader_num_workers,
+                    pin_memory=self.config.dataloader_pin_memory,
+                    drop_last=self.config.dataloader_drop_last,
+                    pad_token_id=self.tokenizer.pad_token_id
+                )
 
         if self.eval_dataset is not None:
             if self.is_distributed:
@@ -317,7 +310,7 @@ class Trainer:
         self.writers = []
 
         # Setup TensorBoard
-        if "tensorboard" in self.config.report_to:
+        if self.config.report_to and "tensorboard" in self.config.report_to:
             try:
                 from torch.utils.tensorboard import SummaryWriter
                 log_dir = os.path.join(self.config.checkpoint_dir, "logs")
@@ -328,7 +321,7 @@ class Trainer:
                 self.logger.warning("TensorBoard not available")
 
         # Setup Weights & Biases
-        if "wandb" in self.config.report_to:
+        if self.config.report_to and "wandb" in self.config.report_to:
             try:
                 import wandb
                 wandb.init(
@@ -353,11 +346,11 @@ class Trainer:
             # Store the original config temporarily
             original_config = self.config
             self.config = config
-            
+
             # Recalculate total steps if needed
             if self.train_dataloader is not None:
                 self.total_steps = self._calculate_total_steps()
-                
+
                 # Recreate scheduler with new config
                 self.scheduler = create_scheduler(
                     optimizer=self.optimizer,
@@ -389,7 +382,7 @@ class Trainer:
 
             # Set epoch for distributed sampler
             if self.is_distributed and hasattr(self.train_dataloader.sampler, 'set_epoch'):
-                self.train_dataloader.sampler.set_epoch(epoch)
+                self.train_dataloader.sampler.set_epoch(epoch)  # type: ignore
 
             # Train one epoch
             epoch_loss = self._train_epoch()
@@ -484,6 +477,9 @@ class Trainer:
         else:
             pbar = self.train_dataloader
 
+        if pbar is None:
+            raise ValueError("train_dataloader is None. Please provide training data.")
+
         for batch_idx, batch in enumerate(pbar):
             # With Accelerate, tensors are already on correct device
             if not (getattr(self.config, 'use_accelerate', False) and self.accelerator is not None):
@@ -531,7 +527,7 @@ class Trainer:
 
             # Update progress bar
             if self.local_rank <= 0:
-                pbar.set_postfix({
+                pbar.set_postfix({  # type: ignore
                     'loss': f'{loss.item():.4f}',
                     'lr': f'{self.optimizer.param_groups[0]["lr"]:.2e}',
                     'step': self.current_step
@@ -545,12 +541,12 @@ class Trainer:
         if getattr(self.config, 'use_gradient_checkpointing', False):
             def model_forward(*args, **kwargs):
                 return self.model(*args, **kwargs)
-            
-            outputs = gradient_checkpointing(model_forward, **batch)
+
+            outputs = gradient_checkpointing(model_forward, use_reentrant=True, **batch)
         else:
             autocast_context = nullcontext()
-            if self.use_amp and self.device.type == "cuda":
-                autocast_context = torch.amp.autocast(device_type="cuda")
+            if self.use_amp:
+                autocast_context = torch.amp.autocast(device_type=self.device.type, dtype=self.amp_dtype)
 
             with autocast_context:
                 outputs = self.model(**batch)
@@ -597,7 +593,7 @@ class Trainer:
         """Perform backward pass."""
         if getattr(self.config, 'use_accelerate', False) and self.accelerator is not None:
             self.accelerator.backward(loss)
-        elif self.use_amp and self.device.type == "cuda":
+        elif self.scaler is not None:
             self.scaler.scale(loss).backward()
         else:
             loss.backward()
@@ -614,16 +610,16 @@ class Trainer:
             elif self.config.max_grad_norm and self.config.max_grad_norm > 0:
                 _ = self.gradient_clipper.clip_gradients(self.model)
             self.optimizer.step()
-        elif self.use_amp and self.device.type == "cuda" and self.scaler is not None:
+        elif self.scaler is not None:
             # Unscale gradients for clipping
-            self.scaler.unscale_(self.optimizer)
+            self.scaler.unscale_(self.optimizer)  # type: ignore
 
             # Clip gradients
             _ = self.gradient_clipper.clip_gradients(self.model)
 
             # Optimizer step
-            self.scaler.step(self.optimizer)
-            self.scaler.update()
+            self.scaler.step(self.optimizer)  # type: ignore
+            self.scaler.update()  # type: ignore
         else:
             # Clip gradients
             _ = self.gradient_clipper.clip_gradients(self.model)
@@ -664,8 +660,8 @@ class Trainer:
 
                 # Forward pass
                 autocast_context = nullcontext()
-                if self.use_amp and self.device.type == "cuda":
-                    autocast_context = torch.amp.autocast(device_type="cuda")
+                if self.use_amp:
+                    autocast_context = torch.amp.autocast(device_type=self.device.type, dtype=self.amp_dtype)
 
                 with autocast_context:
                     outputs = self.model(**batch)
@@ -750,10 +746,7 @@ class Trainer:
 
         # Log to console
         if self.current_step % (self.config.logging_steps * 10) == 0:
-            self.logger.info(
-                f"Step {self.current_step}: Loss={loss:.4f}, "
-                f"LR={self.optimizer.param_groups[0]['lr']:.2e}"
-            )
+            pass # Using tqdm for progress tracking
 
     def _log_eval_metrics(self, eval_loss: float) -> None:
         """Log evaluation metrics."""
@@ -795,6 +788,7 @@ class Trainer:
         model_to_save = self.model
         if hasattr(self.model, 'module'):
             model_to_save = self.model.module
+        assert isinstance(model_to_save, nn.Module), "Model must be a PyTorch Module"
 
         save_checkpoint(
             model=model_to_save,
@@ -824,9 +818,17 @@ class Trainer:
         model_to_save = self.model
         if hasattr(self.model, 'module'):
             model_to_save = self.model.module
+        assert isinstance(model_to_save, nn.Module), "Model must be a PyTorch Module"
 
-        model_to_save.save_pretrained(best_model_path)
-        self.tokenizer.save_pretrained(best_model_path)
+        if hasattr(model_to_save, 'save_pretrained'):
+            model_to_save.save_pretrained(best_model_path)  # type: ignore
+        else:
+            # Fallback: save state dict
+            os.makedirs(best_model_path, exist_ok=True)
+            torch.save(model_to_save.state_dict(), os.path.join(best_model_path, 'pytorch_model.bin'))
+        
+        if hasattr(self.tokenizer, 'save_pretrained'):
+            self.tokenizer.save_pretrained(best_model_path)  # type: ignore
 
         self.logger.info(f"Best model saved: {best_model_path}")
 
@@ -838,6 +840,7 @@ class Trainer:
         model_to_load = self.model
         if hasattr(self.model, 'module'):
             model_to_load = self.model.module
+        assert isinstance(model_to_load, nn.Module), "Model must be a PyTorch Module"
 
         checkpoint_info = load_checkpoint(
             checkpoint_path=checkpoint_path,
@@ -865,7 +868,7 @@ class Trainer:
 
         # Cleanup distributed training
         if self.is_distributed:
-            torch.distributed.destroy_process_group()
+            torch.distributed.destroy_process_group()  # type: ignore
 
     def train_from_config(self,
                          model_config: ModelConfig,
@@ -892,7 +895,7 @@ class Trainer:
                 packing_strategy=data_config.packing_strategy
             )
 
-        if data_config.validation_split:
+        if data_config.validation_split and dataset_name:
             try:
                 self.eval_dataset = LanguageModelingDataset(
                     dataset_name=dataset_name,
@@ -930,9 +933,10 @@ class Trainer:
                     self.train_dataset.dataset = split_dataset['train']
 
                     # Create validation dataset
-                    self.eval_dataset = LanguageModelingDataset(
-                        dataset_name=dataset_name,
-                        dataset_config=data_config.dataset_config,
+                    if dataset_name:
+                        self.eval_dataset = LanguageModelingDataset(
+                            dataset_name=dataset_name,
+                            dataset_config=data_config.dataset_config,
                         split="train",  # We'll override this
                         tokenizer=self.tokenizer,
                         text_column=data_config.text_column,
@@ -946,25 +950,9 @@ class Trainer:
                         packing_strategy=data_config.packing_strategy
                     )
                     # Override with the test split
-                    self.eval_dataset.dataset = split_dataset['test']
-
-                    print(f"Created validation set with {val_size} samples from training data.")
-                else:
-                    raise e            # Setup dataloaders
-            self._setup_dataloaders()
-
-            # Recalculate total steps
-            self.total_steps = self._calculate_total_steps()
-
-            # Recreate scheduler with correct total steps
-            self.scheduler = create_scheduler(
-                optimizer=self.optimizer,
-                scheduler_name=self.config.lr_scheduler,
-                num_training_steps=self.total_steps,
-                warmup_steps=self.config.warmup_steps,
-                min_lr_ratio=self.config.min_lr_ratio
-            )
-
+                        self.eval_dataset.dataset = split_dataset['test']  # type: ignore
+        # Setup dataloaders from the created datasets
+        self._setup_dataloaders()
         # Start training
         self.train()
 
@@ -984,12 +972,10 @@ class Trainer:
 
         # Generate
         with torch.no_grad():
-            pad_token_id = getattr(self.tokenizer, "pad_token_id", None)
-            eos_token_id = getattr(self.tokenizer, "eos_token_id", None)
-            if pad_token_id is None:
-                pad_token_id = eos_token_id
+            pad_token_id = getattr(self.tokenizer, "pad_token_id", None) or 0
+            eos_token_id = getattr(self.tokenizer, "eos_token_id", None) or 3
 
-            generated_ids = self.model.generate(
+            generated_ids = self.model.generate(  # type: ignore
                 input_ids=input_ids,
                 max_length=max_length,
                 temperature=temperature,
@@ -1057,8 +1043,15 @@ class Trainer:
         if hasattr(self.model, 'module'):
             model_to_save = self.model.module
 
-        model_to_save.save_pretrained(save_path)
-        self.tokenizer.save_pretrained(save_path)
+        if hasattr(model_to_save, 'save_pretrained'):
+            model_to_save.save_pretrained(save_path)  # type: ignore
+        else:
+            # Fallback: save state dict
+            os.makedirs(save_path, exist_ok=True)
+            torch.save(model_to_save.state_dict(), os.path.join(save_path, 'pytorch_model.bin'))  # type: ignore
+        
+        if hasattr(self.tokenizer, 'save_pretrained'):
+            self.tokenizer.save_pretrained(save_path)  # type: ignore
 
         self.logger.info(f"Model saved to {save_path}")
 
@@ -1072,11 +1065,16 @@ class Trainer:
         model_to_save = self.model
         if hasattr(self.model, 'module'):
             model_to_save = self.model.module
-            
+
         # Push model to hub
-        model_to_save.push_to_hub(repo_id, **kwargs)
-        self.tokenizer.push_to_hub(repo_id, **kwargs)
+        if hasattr(model_to_save, 'push_to_hub'):
+            model_to_save.push_to_hub(repo_id, **kwargs)  # type: ignore
+        else:
+            raise AttributeError("Model does not support push_to_hub method")
         
+        if hasattr(self.tokenizer, 'push_to_hub'):
+            self.tokenizer.push_to_hub(repo_id, **kwargs)  # type: ignore
+
         self.logger.info(f"Model pushed to Hugging Face Hub: {repo_id}")
 
     @classmethod
@@ -1111,7 +1109,7 @@ class Trainer:
             if param.requires_grad:
                 trainable_param += param.numel()
         return all_param, trainable_param
-    
+
     def print_trainable_parameters(self) -> None:
         """Print trainable parameters information."""
         all_param, trainable_param = self.get_nb_trainable_parameters()
@@ -1147,15 +1145,15 @@ class Trainer:
             if isinstance(child, nn.Linear):
                 # Replace with fused linear
                 fused_layer = FusedLinear(
-                    child.in_features, 
-                    child.out_features, 
+                    child.in_features,
+                    child.out_features,
                     child.bias is not None
                 )
                 # Copy weights and bias
                 fused_layer.weight.data.copy_(child.weight.data)
                 if child.bias is not None:
                     fused_layer.bias.data.copy_(child.bias.data)
-                
+
                 setattr(module, name, fused_layer)
             else:
                 # Recursively apply to child modules
@@ -1193,6 +1191,6 @@ class Trainer:
         config.use_gradient_checkpointing = getattr(config, 'use_gradient_checkpointing', True)
         config.use_low_vram = getattr(config, 'use_low_vram', True)
         config.fuse_layers = getattr(config, 'fuse_layers', True)
-        
-        trainer = cls(model, tokenizer, config, **kwargs)
+
+        trainer = cls(model, tokenizer, config, **kwargs)  # type: ignore
         return trainer

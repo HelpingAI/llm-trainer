@@ -7,6 +7,7 @@ import logging
 import os
 import sys
 from pathlib import Path
+from typing import Optional, Union
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -56,7 +57,7 @@ def load_model_and_tokenizer(model_path: str, device: torch.device):
 
 
 def evaluate_perplexity(model, tokenizer, dataset_config: dict, device: torch.device, 
-                       max_batches: int = None) -> float:
+                       max_batches: Optional[int] = None) -> float:
     """Evaluate perplexity on a dataset."""
     logging.info("Evaluating perplexity...")
     

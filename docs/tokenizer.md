@@ -27,8 +27,8 @@ from llm_trainer.tokenizer import BPETokenizer
 tokenizer = BPETokenizer()
 
 # Train on dataset
-tokenizer.train_from_dataset(
-    dataset_name="wikitext",
+tokenizer.train(
+    dataset="wikitext",
     dataset_config="wikitext-2-raw-v1",
     vocab_size=32000,
     max_samples=100000,  # Limit for faster training

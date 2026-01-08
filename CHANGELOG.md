@@ -5,6 +5,57 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.7] - 2026-01-08
+
+### Overview
+
+This release introduces **Mixed Precision (fp16/bf16) support**, **tqdm progress tracking**, and a **major reorganization of notebooks**. The update enhances training efficiency, provides better visual feedback during training, and improves the overall structure of the project's educational resources.
+
+### Features
+
+- **Mixed Precision Training**
+    - Added `fp16` and `bf16` boolean flags to `TrainingConfig` for explicit precision selection.
+    - Implemented automatic precision selection logic with `should_use_amp()` and `get_amp_dtype()`.
+    - Enhanced `Trainer` with `torch.amp.autocast` and `GradScaler` support for both `fp16` and `bf16`.
+    - Support for hardware-specific precision (e.g., `bf16` on NVIDIA Ampere+).
+
+- **Progress Tracking & Logging**
+    - Replaced excessive console logging with `tqdm` progress bars for training and evaluation.
+    - Real-time display of `loss`, `learning rate`, and `step` in the progress bar.
+    - Reduced console clutter while maintaining detailed logging to TensorBoard and Weights & Biases.
+
+- **Notebook Reorganization**
+    - Created a structured `notebooks/` directory with subfolders: `tokenizers/`, `training/`, and `generation/`.
+    - Renamed all notebooks to more descriptive, consistent names.
+    - Added new comprehensive notebooks:
+        - `notebooks/tokenizers/all_tokenizers_demo.ipynb`: Demonstrates all available tokenizer types.
+        - `notebooks/training/train_classification_model.ipynb`: Guide for training text classification models.
+
+### Improvements
+
+- **Tokenizer API**
+    - Standardized tokenizer training API: `.train()` is now the primary method for all data sources.
+    - Deprecated `.train_from_texts()` and `.train_from_dataset()` in favor of the unified `.train()` method.
+    - Updated all examples, scripts, and documentation to use the new unified API.
+
+- **Tooling & Environment**
+    - Bumped `requires-python` to `>=3.9` in `pyproject.toml` for better dependency compatibility.
+    - Removed `apex` from optional dependencies to avoid build failures on Windows.
+    - Added `uv` extra-build-dependencies for improved environment setup.
+
+### Technical Changes
+
+- **Configuration System**
+    - Refactored `TrainingConfig` to handle `fp16`/`bf16` flags and map them to internal `use_amp` logic.
+    - Improved device-aware validation for mixed precision settings.
+
+- **Trainer Implementation**
+    - Refactored `_train_epoch` and `_evaluate` to use `tqdm` for progress tracking.
+    - Updated `_training_step` and `_backward_step` to support `torch.amp` mixed precision.
+    - Unified dataloader setup in `train_from_config`.
+
+---
+
 ## [0.2.5] - 2025-09-05
 
 ### Overview

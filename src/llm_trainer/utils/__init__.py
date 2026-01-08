@@ -6,7 +6,7 @@ from .inference import InferenceEngine
 
 __all__ = [
     "TextGenerator",
-    "GenerationConfig", 
+    "GenerationConfig",
     "compute_perplexity",
     "compute_bleu_score",
     "InferenceEngine"

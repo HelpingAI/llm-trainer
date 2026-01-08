@@ -1,9 +1,8 @@
 """Byte Pair Encoding (BPE) tokenizer implementation from scratch."""
 
 import re
-import json
 from collections import defaultdict, Counter
-from typing import List, Dict, Tuple, Set, Optional, Union
+from typing import List, Dict, Tuple, Optional, cast
 from tqdm import tqdm
 import unicodedata
 
@@ -12,12 +11,12 @@ from .base_tokenizer import BaseTokenizer
 
 class BPETokenizer(BaseTokenizer):
     """Byte Pair Encoding tokenizer implemented from scratch."""
-    
+
     def __init__(self):
         super().__init__()
         self.merges: List[Tuple[str, str]] = []
         self.cache: Dict[str, List[str]] = {}
-        
+
         # Regex pattern for pre-tokenization (similar to GPT-2)
         # Enhanced to handle emojis, symbols, and international characters
         # Patterns:
@@ -44,7 +43,7 @@ class BPETokenizer(BaseTokenizer):
             r"\s+(?!\S)|\s+"  # Whitespace
         )
         self.pat = re.compile(pattern, re.IGNORECASE)
-    
+
     def _get_stats(self, vocab: Dict[str, int]) -> Dict[Tuple[str, str], int]:
         """Get frequency of adjacent symbol pairs."""
         pairs = defaultdict(int)
@@ -53,23 +52,23 @@ class BPETokenizer(BaseTokenizer):
             for i in range(len(symbols) - 1):
                 pairs[(symbols[i], symbols[i + 1])] += freq
         return pairs
-    
+
     def _merge_vocab(self, pair: Tuple[str, str], vocab: Dict[str, int]) -> Dict[str, int]:
         """Merge the most frequent pair in vocabulary."""
         bigram = re.escape(' '.join(pair))
         p = re.compile(r'(?<!\S)' + bigram + r'(?!\S)')
-        
+
         new_vocab = {}
         for word in vocab:
             new_word = p.sub(''.join(pair), word)
             new_vocab[new_word] = vocab[word]
         return new_vocab
-    
+
     def _get_word_tokens(self, text: str) -> List[str]:
         """Pre-tokenize text into words using regex pattern."""
         # Normalize unicode
         text = unicodedata.normalize('NFC', text)
-        
+
         # Find all matches
         tokens = []
         for match in self.pat.finditer(text):
@@ -78,15 +77,16 @@ class BPETokenizer(BaseTokenizer):
             token_bytes = token.encode('utf-8')
             token = ''.join(chr(b) for b in token_bytes)
             tokens.append(token)
-        
+
         return tokens
-    
-    def train(self, texts: List[str], vocab_size: int = 50000, 
-              min_frequency: int = 2, verbose: bool = True) -> None:
+
+    def _train_on_texts(self, texts: List[str], vocab_size: int, **kwargs) -> None:
         """Train BPE tokenizer on corpus."""
+        min_frequency = kwargs.get('min_frequency', 2)
+        verbose = kwargs.get('verbose', True)
         if verbose:
             print("Training BPE tokenizer...")
-        
+
         # Initialize special tokens
         self.vocab = {
             self.pad_token: self.pad_token_id,
@@ -94,153 +94,82 @@ class BPETokenizer(BaseTokenizer):
             self.bos_token: self.bos_token_id,
             self.eos_token: self.eos_token_id
         }
-        
+
         self.special_tokens = {
             self.pad_token: self.pad_token_id,
             self.unk_token: self.unk_token_id,
             self.bos_token: self.bos_token_id,
             self.eos_token: self.eos_token_id
         }
-        
+
         # Collect word frequencies
         if verbose:
             print("Collecting word frequencies...")
-        
+
         word_freqs = Counter()
         for text in tqdm(texts, desc="Processing texts", disable=not verbose):
             words = self._get_word_tokens(text)
             for word in words:
                 word_freqs[word] += 1
-        
+
         # Filter by minimum frequency
-        word_freqs = {word: freq for word, freq in word_freqs.items() 
+        word_freqs = {word: freq for word, freq in word_freqs.items()
                      if freq >= min_frequency}
-        
+
         if verbose:
             print(f"Found {len(word_freqs)} unique words")
-        
+
         # Initialize vocabulary with character-level tokens
         vocab = {}
         for word, freq in word_freqs.items():
             # Split word into characters and add end-of-word marker
             word_tokens = list(word) + ['</w>']
             vocab[' '.join(word_tokens)] = freq
-        
+
         # Get all unique characters
         all_chars = set()
         for word in vocab:
             all_chars.update(word.split())
-        
+
         # Add character tokens to vocabulary
         for char in sorted(all_chars):
             if char not in self.vocab:
                 self.vocab[char] = len(self.vocab)
-        
+
         if verbose:
             print(f"Initial vocabulary size: {len(self.vocab)}")
-        
+
         # Learn BPE merges
         num_merges = vocab_size - len(self.vocab)
         self.merges = []
-        
+
         if verbose:
             print(f"Learning {num_merges} BPE merges...")
-        
+
         for i in tqdm(range(num_merges), desc="Learning merges", disable=not verbose):
             pairs = self._get_stats(vocab)
             if not pairs:
                 break
-            
+
             # Find most frequent pair
-            best_pair = max(pairs, key=pairs.get)
-            
+            best_pair = max(pairs, key=lambda k: pairs[k])
+
             # Merge the pair
             vocab = self._merge_vocab(best_pair, vocab)
             self.merges.append(best_pair)
-            
+
             # Add merged token to vocabulary
             merged_token = ''.join(best_pair)
             if merged_token not in self.vocab:
                 self.vocab[merged_token] = len(self.vocab)
-        
+
         # Create inverse vocabulary
         self.inverse_vocab = {v: k for k, v in self.vocab.items()}
-        
+
         if verbose:
             print(f"Final vocabulary size: {len(self.vocab)}")
             print(f"Learned {len(self.merges)} merges")
-    
-    def train_from_dataset(self, dataset_name: str, dataset_config: Optional[str] = None,
-                          split: str = "train", text_column: str = "text",
-                          vocab_size: int = 50000, max_samples: Optional[int] = None,
-                          verbose: bool = True) -> None:
-        """Train tokenizer from Hugging Face dataset.
-        
-        Args:
-            dataset_name: Name of the dataset (e.g., "Abhaykoul/test")
-            dataset_config: Dataset configuration name (optional)
-            split: Dataset split to use. Supports slicing notation like "train[:5000]" or "train[1000:6000]"
-            text_column: Name of the text column in the dataset
-            vocab_size: Target vocabulary size
-            max_samples: Maximum number of samples to use (alternative to split slicing)
-            verbose: Whether to print progress information
-        """
-        try:
-            from datasets import load_dataset
-        except ImportError:
-            raise ImportError("Please install datasets: pip install datasets")
-        
-        if verbose:
-            print(f"Loading dataset: {dataset_name}")
-            if ":" in split:
-                print(f"Using dataset slice: {split}")
-        
-        # Load dataset with improved error handling
-        try:
-            if dataset_config and dataset_config != dataset_name:
-                # Try with the specified config first
-                dataset = load_dataset(dataset_name, dataset_config, split=split)
-            else:
-                # Try without config first (use default)
-                dataset = load_dataset(dataset_name, split=split)
-        except ValueError as e:
-            if "BuilderConfig" in str(e) and "not found" in str(e):
-                if verbose:
-                    print(f"Config '{dataset_config}' not found, trying with default config...")
-                # Fallback to default config
-                dataset = load_dataset(dataset_name, split=split)
-            else:
-                raise e
-        
-        # Extract texts
-        texts = []
-        # If split already contains slicing (e.g., "train[:5000]"), max_samples is ignored
-        if ":" in split:
-            # Dataset slice is already applied, use all available samples
-            dataset_size = len(dataset)
-            max_samples_to_use = dataset_size
-            if verbose:
-                print(f"Dataset slice loaded: {dataset_size} samples")
-        else:
-            # Apply max_samples limit if no slicing in split
-            dataset_size = len(dataset)
-            max_samples_to_use = max_samples or dataset_size
-            if verbose:
-                print(f"Dataset size: {dataset_size}, using {max_samples_to_use} samples")
-        
-        for i, example in enumerate(tqdm(dataset, desc="Loading texts", disable=not verbose)):
-            if i >= max_samples_to_use:
-                break
-            
-            text = example[text_column]
-            if text and text.strip():  # Skip empty texts
-                texts.append(text.strip())
-        
-        if verbose:
-            print(f"Loaded {len(texts)} texts")
-        
-        # Train tokenizer
-        self.train(texts, vocab_size=vocab_size, verbose=verbose)
+
 
     def _apply_bpe(self, word: str) -> List[str]:
         """Apply BPE merges to a word."""
@@ -340,7 +269,7 @@ class BPETokenizer(BaseTokenizer):
         import os
 
         # Load base tokenizer
-        tokenizer = super().from_pretrained(load_directory)
+        tokenizer = cast('BPETokenizer', super().from_pretrained(load_directory))
 
         # Load BPE merges
         merges_file = os.path.join(load_directory, "merges.txt")

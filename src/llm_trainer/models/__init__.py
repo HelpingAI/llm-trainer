@@ -30,13 +30,24 @@ except ImportError:
     # Create dummy functions that warn about missing SafeTensors
     def _safetensors_not_available(*args, **kwargs):
         raise ImportError("SafeTensors not available. Install with: pip install safetensors")
+
+    def save_model_safetensors(*args, **kwargs):  # type: ignore
+        _safetensors_not_available(*args, **kwargs)
     
-    save_model_safetensors = _safetensors_not_available
-    load_model_safetensors = _safetensors_not_available
-    is_safetensors_available = lambda: False
-    convert_pytorch_to_safetensors = _safetensors_not_available
-    get_safetensors_metadata = _safetensors_not_available
-    list_safetensors_tensors = _safetensors_not_available
+    def load_model_safetensors(*args, **kwargs):  # type: ignore
+        _safetensors_not_available(*args, **kwargs)
+    
+    def is_safetensors_available() -> bool:  # type: ignore
+        return False
+    
+    def convert_pytorch_to_safetensors(*args, **kwargs):  # type: ignore
+        _safetensors_not_available(*args, **kwargs)
+    
+    def get_safetensors_metadata(*args, **kwargs):  # type: ignore
+        return _safetensors_not_available(*args, **kwargs)
+    
+    def list_safetensors_tensors(*args, **kwargs):  # type: ignore
+        return _safetensors_not_available(*args, **kwargs)
 
 __all__ = [
     "TransformerLM",

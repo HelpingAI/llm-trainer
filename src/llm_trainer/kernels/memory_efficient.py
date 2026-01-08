@@ -2,7 +2,7 @@
 
 import torch
 import torch.nn as nn
-from typing import Optional, Tuple, List
+from typing import Optional
 import gc
 
 
@@ -40,39 +40,39 @@ class LowVRAMLinear(nn.Module):
     """
     Memory-efficient linear layer that offloads weights to CPU when not in use.
     """
-    
+
     def __init__(self, in_features: int, out_features: int, bias: bool = True):
         super().__init__()
         self.in_features = in_features
         self.out_features = out_features
-        
+
         # Store weights on CPU initially
         self.weight_cpu = nn.Parameter(
-            torch.empty(out_features, in_features), 
+            torch.empty(out_features, in_features),
             requires_grad=True
         )
         if bias:
             self.bias_cpu = nn.Parameter(
-                torch.empty(out_features), 
+                torch.empty(out_features),
                 requires_grad=True
             )
         else:
             self.register_parameter('bias_cpu', None)
-            
+
         self.reset_parameters()
-        
+
         # Device tracking
         self._weight_gpu = None
         self._bias_gpu = None
         self._current_device = None
-    
+
     def reset_parameters(self):
         nn.init.kaiming_uniform_(self.weight_cpu, a=5**0.5)
         if self.bias_cpu is not None:
             fan_in, _ = nn.init._calculate_fan_in_and_fan_out(self.weight_cpu)
             bound = 1 / fan_in**0.5
             nn.init.uniform_(self.bias_cpu, -bound, bound)
-    
+
     def _move_to_device(self, device):
         """Move parameters to the specified device."""
         if self._current_device != device:
@@ -81,24 +81,29 @@ class LowVRAMLinear(nn.Module):
                 self.weight_cpu.data.copy_(self._weight_gpu.data)
                 del self._weight_gpu
                 self._weight_gpu = None
-                
+
             if self._bias_gpu is not None and self.bias_cpu is not None:
                 self.bias_cpu.data.copy_(self._bias_gpu.data)
                 del self._bias_gpu
                 self._bias_gpu = None
-            
+
             # Move to new device
             self._weight_gpu = self.weight_cpu.data.to(device)
             if self.bias_cpu is not None:
                 self._bias_gpu = self.bias_cpu.data.to(device)
-                
+
             self._current_device = device
-    
+
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         device = input.device
         self._move_to_device(device)
-        
+
         bias = self._bias_gpu if self._bias_gpu is not None else None
+        
+        # Ensure weight is not None for type checker
+        if self._weight_gpu is None:
+            raise RuntimeError("Weight tensor is None after moving to device")
+            
         return torch.nn.functional.linear(input, self._weight_gpu, bias)
 
 
@@ -162,28 +167,28 @@ def efficient_attention_forward(
         # Fallback implementation for older PyTorch versions
         # This is less memory efficient but works on older versions
         batch_size, num_heads, seq_len, head_dim = query.shape
-        
+
         # Compute attention scores
         scores = torch.matmul(query, key.transpose(-2, -1)) / (head_dim ** 0.5)
-        
+
         # Apply causal mask if needed
         if is_causal:
             causal_mask = torch.triu(
-                torch.ones(seq_len, seq_len, device=scores.device), 
+                torch.ones(seq_len, seq_len, device=scores.device),
                 diagonal=1
             ).bool()
             scores = scores.masked_fill(causal_mask, float('-inf'))
-        
+
         # Apply attention mask
         if attn_mask is not None:
             scores = scores + attn_mask
-        
+
         # Apply softmax
         attn_weights = torch.nn.functional.softmax(scores, dim=-1)
-        
+
         # Apply dropout
         if dropout_p > 0.0:
             attn_weights = torch.nn.functional.dropout(attn_weights, p=dropout_p)
-        
+
         # Apply attention
         return torch.matmul(attn_weights, value)

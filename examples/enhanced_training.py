@@ -8,13 +8,15 @@ from pathlib import Path
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
+from typing import Tuple
+
 from llm_trainer.config import ModelConfig, TrainingConfig
 from llm_trainer.models import TransformerLM
 from llm_trainer.tokenizer import BPETokenizer
 from llm_trainer.training import Trainer
 
 
-def create_sample_model_and_tokenizer():
+def create_sample_model_and_tokenizer() -> Tuple[TransformerLM, BPETokenizer]:
     """Create a small sample model and tokenizer for demonstration."""
     # Model configuration
     model_config = ModelConfig(
@@ -36,7 +38,7 @@ def create_sample_model_and_tokenizer():
     return model, tokenizer
 
 
-def demonstrate_trl_style_api():
+def demonstrate_trl_style_api() -> Trainer:
     """Demonstrate TRL-style API."""
     print("🚀 Demonstrating TRL-Style API")
     print("=" * 50)
@@ -64,7 +66,7 @@ def demonstrate_trl_style_api():
         config=training_config
     )
     
-    print(f"✅ Trainer created with TRL-style config:")
+    print("✅ Trainer created with TRL-style config:")
     print(f"   - Batch size: {training_config.per_device_train_batch_size}")
     print(f"   - Learning rate: {training_config.learning_rate}")
     print(f"   - Epochs: {training_config.num_train_epochs}")
@@ -80,13 +82,13 @@ def demonstrate_trl_style_api():
     return trainer
 
 
-def demonstrate_peft_integration():
+def demonstrate_peft_integration() -> None:
     """Demonstrate PEFT integration."""
     print("\n🚀 Demonstrating PEFT Integration")
     print("=" * 50)
     
     try:
-        from peft import LoraConfig, TaskType
+        from peft import LoraConfig, TaskType # type: ignore
         
         # Create model and tokenizer
         model, tokenizer = create_sample_model_and_tokenizer()
@@ -123,13 +125,13 @@ def demonstrate_peft_integration():
         print("\n💡 Model prepared for k-bit training")
         
     except ImportError:
-        print("❌ PEFT not installed. Install with: pip install peft")
+        print("❌ PEFT not installed. Install with: uv pip install peft")
         print("Skipping PEFT demonstration.")
     except Exception as e:
         print(f"❌ Error in PEFT demonstration: {e}")
 
 
-def demonstrate_huggingface_style_api():
+def demonstrate_huggingface_style_api() -> Trainer:
     """Demonstrate HuggingFace-style API."""
     print("\n🚀 Demonstrating HuggingFace-Style API")
     print("=" * 50)
@@ -161,19 +163,19 @@ def demonstrate_huggingface_style_api():
     return trainer
 
 
-def main():
+def main() -> None:
     """Main function to demonstrate all enhanced features."""
     print("🎯 LLM Trainer Enhanced Features Examples")
     print("=" * 60)
     
     # Demonstrate TRL-style API
-    trl_trainer = demonstrate_trl_style_api()
+    _ = demonstrate_trl_style_api()
     
     # Demonstrate PEFT integration
     demonstrate_peft_integration()
     
     # Demonstrate HuggingFace-style API
-    hf_trainer = demonstrate_huggingface_style_api()
+    _ = demonstrate_huggingface_style_api()
     
     print("\n🎉 All enhanced features demonstrated!")
     print("\n🔧 Key Features:")
@@ -185,7 +187,7 @@ def main():
     print("   • Memory-efficient training techniques")
     
     print("\n📚 Next Steps:")
-    print("   1. Install required dependencies: pip install peft transformers")
+    print("   1. Install required dependencies: uv pip install peft transformers")
     print("   2. Replace sample model with actual HuggingFace model")
     print("   3. Add real datasets for training")
     print("   4. Configure training parameters for your use case")

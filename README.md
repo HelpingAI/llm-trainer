@@ -13,15 +13,21 @@
 
 </div>
 
-## What's New in v0.2.6
+## What's New in v0.2.7
 
+- **🔤 7 Tokenizer Types**: BPE, WordPiece, SentencePiece, Character, ByteBPE, Simple, and HuggingFace
+- **⚡ Easy Creation**: `create_tokenizer()` function for one-line tokenizer creation
+- **📓 Jupyter Notebooks**: Interactive examples for learning and experimentation
+- **🧹 Code Cleanup**: Removed patching system, improved code organization
+- **📚 Streamlined Docs**: Essential documentation only
+
+### Core Features
 - **Memory Optimizations**: Efficient training with kernel optimizations
-- **SafeTensors Support**: Secure model serialization with automatic sharding for large models
+- **SafeTensors Support**: Secure model serialization with automatic sharding
 - **HuggingFace Integration**: Use any pretrained tokenizer via `HFTokenizerWrapper`
 - **Accelerate Support**: Distributed training with `use_accelerate=true`
 - **LoRA/PEFT**: Parameter-efficient fine-tuning with `use_peft=true`
 - **Backward Compatible**: Existing PyTorch models continue to work
-- **Patching System**: Kernel optimizations and memory-efficient training
 
 ## Features
 
@@ -31,9 +37,14 @@
 - **Modular Design**: Easy to extend and customize for research and production
 
 ### Tokenization
+- **7 Tokenizer Types**: BPE, WordPiece, SentencePiece, Character-level, ByteBPE, Simple, and HuggingFace
+- **Easy Factory Function**: `create_tokenizer()` - Simple one-line tokenizer creation
+- **Beginner-Friendly**: Simple and Character tokenizers perfect for learning
 - **BPE Tokenizer**: From-scratch BPE with Unicode and emoji support
 - **HuggingFace Integration**: Use any pretrained tokenizer (Mistral, Llama, GPT-2, etc.)
-- **WordPiece Support**: Alternative tokenization strategies
+- **WordPiece Support**: BERT-style tokenization
+- **SentencePiece/Unigram**: Multilingual tokenization
+- **Byte-level BPE**: GPT-2 style byte-level tokenization
 
 ### Data Pipeline
 - **HuggingFace Datasets**: Efficient loading with preprocessing and batching
@@ -90,15 +101,37 @@ pip install -e ".[full]"
 
 ## Quick Start
 
+### 🎯 Beginner-Friendly Tokenizer (Easiest Way!)
+
+```python
+from llm_trainer.tokenizer import create_tokenizer
+
+# Create a tokenizer in one line!
+tokenizer = create_tokenizer("simple")  # or "bpe", "char", etc.
+
+# Train it on your text
+texts = ["Hello world!", "This is easy!", "Tokenization made simple."]
+tokenizer.train(texts, verbose=True)
+
+# Use it
+token_ids = tokenizer.encode("Hello world!")
+print(f"Token IDs: {token_ids}")
+
+# List available tokenizers
+from llm_trainer.tokenizer import get_available_tokenizers
+available = get_available_tokenizers()
+print("Available tokenizers:", list(available.keys()))
+```
+
 ### Python API - Enhanced Training
 
 ```python
 from llm_trainer import Trainer, TrainingConfig
 from llm_trainer.models import TransformerLM
 from llm_trainer.config import ModelConfig
-from llm_trainer.tokenizer import BPETokenizer
+from llm_trainer.tokenizer import create_tokenizer
 
-# Create model and tokenizer
+# Create model and tokenizer (easy way!)
 model_config = ModelConfig(
     vocab_size=32000,
     d_model=512,
@@ -107,7 +140,9 @@ model_config = ModelConfig(
     max_seq_len=1024
 )
 model = TransformerLM(model_config)
-tokenizer = BPETokenizer()
+
+# Use factory function for easy tokenizer creation
+tokenizer = create_tokenizer("bpe")  # or "wordpiece", "sentencepiece", etc.
 
 # Configure training with TRL-style parameters
 training_config = TrainingConfig(
@@ -181,26 +216,6 @@ optimizer = create_optimizer(
 )
 ```
 
-### Patching for Transformers/TRL
-
-```python
-from llm_trainer import patch_transformers, patch_trl
-
-# Patch Hugging Face Transformers with memory-efficient optimizations
-patch_transformers()
-
-# Patch TRL with memory-efficient optimizations
-patch_trl()
-
-# Now you can use enhanced Transformers/TRL classes with memory-efficient methods
-from transformers import Trainer, TrainingArguments
-from trl import SFTTrainer
-
-# These trainers now have enhanced methods
-trainer = SFTTrainer(...)
-trainer.print_trainable_parameters()  # Added by patching
-trainer.prepare_model_for_kbit_training()  # Added by patching
-```
 
 ### Kernel Optimizations for Fast Training
 
@@ -258,7 +273,7 @@ training:
   batch_size: 16
   learning_rate: 1e-4
   num_epochs: 3
-  use_amp: true
+  fp16: true
   gradient_accumulation_steps: 4
 ```
 
@@ -273,7 +288,7 @@ model:
 
 training:
   batch_size: 2
-  use_amp: false
+  fp16: false
   gradient_accumulation_steps: 8
   dataloader_num_workers: 2
 ```
@@ -309,9 +324,15 @@ llm-trainer/
 │   │   ├── safetensors_utils.py  # SafeTensors utilities
 │   │   └── attention.py          # Attention mechanisms
 │   ├── tokenizer/                # Tokenization
+│   │   ├── base_tokenizer.py     # Base tokenizer interface
 │   │   ├── bpe_tokenizer.py      # BPE implementation
+│   │   ├── wordpiece_tokenizer.py # WordPiece implementation
+│   │   ├── sentencepiece_tokenizer.py # SentencePiece/Unigram
+│   │   ├── char_tokenizer.py     # Character-level tokenizer
+│   │   ├── byte_bpe_tokenizer.py # Byte-level BPE (GPT-2 style)
+│   │   ├── simple_tokenizer.py   # Simple whitespace tokenizer
 │   │   ├── hf_tokenizer.py       # HuggingFace wrapper
-│   │   └── wordpiece_tokenizer.py # WordPiece implementation
+│   │   └── factory.py            # Easy tokenizer creation
 │   ├── data/                     # Data pipeline
 │   │   ├── dataset.py            # Dataset classes
 │   │   ├── dataloader.py         # Data loading
@@ -323,9 +344,6 @@ llm-trainer/
 │   ├── kernels/                  # Kernel optimizations
 │   │   ├── fused_ops.py          # Fused operations
 │   │   └── memory_efficient.py   # Memory-efficient operations
-│   ├── patching/                 # Patching system
-│   │   ├── patch_transformers.py # Transformers patching
-│   │   └── patch_trl.py          # TRL patching
 │   ├── utils/                    # Utilities
 │   │   ├── generation.py         # Text generation
 │   │   ├── inference.py          # Inference utilities
@@ -343,20 +361,35 @@ llm-trainer/
 │   ├── cpu_small_model.yaml      # CPU-optimized small
 │   └── cpu_medium_model.yaml     # CPU-optimized medium
 ├── examples/                     # Usage examples
+│   ├── beginner_tokenizer_examples.py # Beginner-friendly examples
 │   ├── complete_pipeline.py      # End-to-end example
 │   ├── safetensors_example.py    # SafeTensors demo
 │   └── train_small_model.py      # Quick start example
+├── notebooks/                    # Jupyter notebooks
+│   ├── 01_tokenizer_basics.ipynb # Tokenizer basics
+│   ├── 02_bpe_tokenizer.ipynb   # BPE tokenizer training
+│   ├── 03_train_small_model.ipynb # Training a small model
+│   ├── 04_text_generation.ipynb # Text generation
+│   └── 05_comparing_tokenizers.ipynb # Tokenizer comparison
 └── docs/                         # Documentation
 ```
 
 ## Documentation
 
 - [Getting Started Guide](docs/getting_started.md) — Complete setup and first steps
-- [Model Architecture](docs/architecture.md) — Transformer implementation details
 - [Training Guide](docs/training.md) — Comprehensive training tutorial
-- [CPU Training Guide](docs/cpu_training.md) — Dedicated CPU training documentation
-- [Tokenizer Details](docs/tokenizer.md) — BPE tokenizer documentation
+- [Tokenizer Details](docs/tokenizer.md) — Tokenizer documentation
 - [API Reference](docs/api.md) — Complete API documentation
+
+## Jupyter Notebooks
+
+Interactive examples in the `notebooks/` directory:
+
+- `01_tokenizer_basics.ipynb` - Learn tokenizer basics
+- `02_bpe_tokenizer.ipynb` - Train a BPE tokenizer
+- `03_train_small_model.ipynb` - Train a small language model
+- `04_text_generation.ipynb` - Generate text with trained models
+- `05_comparing_tokenizers.ipynb` - Compare different tokenizers
 
 ## Development
 
